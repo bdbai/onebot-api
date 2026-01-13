@@ -1,4 +1,4 @@
-use crate::message::Segment;
+use crate::message::receive_segment::ReceiveSegment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -20,7 +20,7 @@ pub enum MessageEvent {
 		sub_type: PrivateMessageSubType,
 		message_id: i32,
 		user_id: i64,
-		message: Vec<Segment>,
+		message: Vec<ReceiveSegment>,
 		raw_message: String,
 		font: i32,
 		sender: PrivateMessageSender,
@@ -33,7 +33,7 @@ pub enum MessageEvent {
 		group_id: i64,
 		user_id: i64,
 		anonymous: Option<GroupMessageAnonymous>,
-		message: Vec<Segment>,
+		message: Vec<ReceiveSegment>,
 		raw_message: String,
 		font: i32,
 		sender: GroupMessageSender,

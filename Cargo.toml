@@ -2,6 +2,9 @@
 name = "onebot-api"
 version = "0.1.0"
 edition = "2024"
+authors = ["Alex Chen <m.ac.alexchen@outlook.com>"]
+description = "Onebot API"
+license = "MIT"
 
 [dependencies]
 anyhow = "1.0.100"
@@ -17,9 +20,10 @@ http = "1.4.0"
 flume = "0.12.0"
 uuid = { version = "1.19.0", features = ["v4"] }
 
-macros.workspace = true
-serde.workspace = true
-serde_json.workspace = true
+#onebot-api-macro = { path = "crates/macros" }
+onebot-api-macro = "0.1.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.146"
 
 [features]
 websocket = ["tokio-tungstenite"]
@@ -31,10 +35,4 @@ default = ["websocket", "websocket-reverse", "http", "http-post"]
 
 [workspace]
 members = ["crates/*"]
-
-[workspace.dependencies]
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.146"
-
-macros = { path = "crates/macros" }
 

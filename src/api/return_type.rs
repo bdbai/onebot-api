@@ -2,7 +2,7 @@ use super::arg_type::*;
 use crate::event::message::{
 	GroupMessageSender, GroupMessageSenderRole, PrivateMessageSender, Sex,
 };
-use crate::message::Segment;
+use crate::message::receive_segment::ReceiveSegment;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -14,7 +14,7 @@ pub struct GetMsgResponse {
 	pub message_id: i32,
 	pub real_id: i32,
 	pub sender: Sender,
-	pub message: Vec<Segment>,
+	pub message: Vec<ReceiveSegment>,
 }
 
 #[derive(Deserialize)]

@@ -8,11 +8,12 @@ use crate::api::return_type::{
 };
 use crate::event::message::GroupMessageAnonymous;
 use crate::event::{Event, EventReceiver, EventTrait};
-use crate::message::Segment;
+use crate::message::receive_segment::ReceiveSegment;
+use crate::message::send_segment::SendSegment;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use flume::{Receiver, Sender};
-use macros::generate_json;
+use onebot_api_macro::generate_json;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -233,7 +234,7 @@ impl APISender for WsClient {
 	async fn send_private_msg(
 		&self,
 		user_id: i64,
-		message: Segment,
+		message: Vec<SendSegment>,
 		auto_escape: Option<bool>,
 	) -> anyhow::Result<i32> {
 		let res: SendMsgResponse = self.get_request_value(__json, __echo).await?;
@@ -244,7 +245,7 @@ impl APISender for WsClient {
 	async fn send_group_msg(
 		&self,
 		group_id: i64,
-		message: Segment,
+		message: Vec<SendSegment>,
 		auto_escape: Option<bool>,
 	) -> anyhow::Result<i32> {
 		let res: SendMsgResponse = self.get_request_value(__json, __echo).await?;
@@ -257,7 +258,7 @@ impl APISender for WsClient {
 		message_type: Option<MessageType>,
 		user_id: i64,
 		group_id: i64,
-		message: Segment,
+		message: Vec<SendSegment>,
 		auto_escape: Option<bool>,
 	) -> anyhow::Result<i32> {
 		let res: SendMsgResponse = self.get_request_value(__json, __echo).await?;
@@ -276,7 +277,7 @@ impl APISender for WsClient {
 	}
 
 	#[generate_json]
-	async fn get_forward_msg(&self, id: String) -> anyhow::Result<Vec<Segment>> {
+	async fn get_forward_msg(&self, id: String) -> anyhow::Result<Vec<ReceiveSegment>> {
 		self.get_request_value(__json, __echo).await
 	}
 

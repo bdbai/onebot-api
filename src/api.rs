@@ -1,5 +1,6 @@
 use crate::event::message::GroupMessageAnonymous;
-use crate::message::Segment;
+use crate::message::receive_segment::ReceiveSegment;
+use crate::message::send_segment::SendSegment;
 use arg_type::*;
 use async_trait::async_trait;
 use return_type::*;
@@ -14,13 +15,13 @@ pub trait APISender {
 	async fn send_private_msg(
 		&self,
 		user_id: i64,
-		message: Segment,
+		message: Vec<SendSegment>,
 		auto_escape: Option<bool>,
 	) -> anyhow::Result<i32>;
 	async fn send_group_msg(
 		&self,
 		group_id: i64,
-		message: Segment,
+		message: Vec<SendSegment>,
 		auto_escape: Option<bool>,
 	) -> anyhow::Result<i32>;
 	async fn send_msg(
@@ -28,12 +29,12 @@ pub trait APISender {
 		message_type: Option<MessageType>,
 		user_id: i64,
 		group_id: i64,
-		message: Segment,
+		message: Vec<SendSegment>,
 		auto_escape: Option<bool>,
 	) -> anyhow::Result<i32>;
 	async fn delete_msg(&self, message_id: i32) -> anyhow::Result<()>;
 	async fn get_msg(&self, message_id: i32) -> anyhow::Result<GetMsgResponse>;
-	async fn get_forward_msg(&self, id: String) -> anyhow::Result<Vec<Segment>>;
+	async fn get_forward_msg(&self, id: String) -> anyhow::Result<Vec<ReceiveSegment>>;
 	async fn send_like(&self, user_id: i64, times: Option<i32>) -> anyhow::Result<()>;
 	async fn set_group_kick(
 		&self,

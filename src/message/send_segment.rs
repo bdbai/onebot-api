@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 #[serde(tag = "type")]
-pub enum Segment {
+pub enum SendSegment {
 	#[serde(rename = "text")]
 	Text { data: TextData },
 
@@ -64,74 +64,70 @@ pub enum Segment {
 	Json { data: JsonData },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct TextData {
 	pub text: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct FaceData {
 	pub id: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct ImageData {
 	pub file: String,
 	#[serde(rename = "type")]
 	pub image_type: Option<String>,
-	pub url: Option<String>,
-	pub cache: Option<String>,
-	pub proxy: Option<String>,
-	pub timeout: Option<String>,
+	pub cache: Option<bool>,
+	pub proxy: Option<bool>,
+	pub timeout: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct RecordData {
 	pub file: String,
 	pub magic: String,
-	pub url: Option<String>,
-	pub cache: Option<String>,
-	pub proxy: Option<String>,
-	pub timeout: Option<String>,
+	pub cache: Option<bool>,
+	pub proxy: Option<bool>,
+	pub timeout: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct VideoData {
 	pub file: String,
-	pub url: Option<String>,
-	pub cache: Option<String>,
-	pub proxy: Option<String>,
-	pub timeout: Option<String>,
+	pub cache: Option<bool>,
+	pub proxy: Option<bool>,
+	pub timeout: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct AtData {
 	pub qq: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct RpsData {}
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct DiceData {}
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct ShakeData {}
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct PokeData {
 	#[serde(rename = "type")]
 	pub poke_type: String,
 	pub id: String,
-	pub name: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct AnonymousData {
-	pub ignore: Option<String>,
+	pub ignore: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct ShareData {
 	pub url: String,
 	pub title: String,
@@ -139,25 +135,25 @@ pub struct ShareData {
 	pub image: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct ContactData {
 	#[serde(rename = "type")]
 	pub contact_type: String,
 	pub id: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct LocationData {
 	pub lat: String,
 	pub lon: String,
-	pub title: String,
-	pub content: String,
+	pub title: Option<String>,
+	pub content: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct MusicData {
 	#[serde(rename = "type")]
-	pub music_type: Option<String>,
+	pub music_type: String,
 	pub id: Option<String>,
 	pub url: Option<String>,
 	pub audio: Option<String>,
@@ -166,30 +162,28 @@ pub struct MusicData {
 	pub image: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct ReplyData {
 	pub id: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ForwardData {
-	pub id: Option<String>,
-}
+#[derive(Serialize, Debug, Clone)]
+pub struct ForwardData {}
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct NodeData {
 	pub id: Option<String>,
 	pub user_id: Option<String>,
 	pub nickname: Option<String>,
-	pub content: Option<Vec<Segment>>,
+	pub content: Option<Vec<SendSegment>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct XmlData {
 	pub data: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct JsonData {
 	pub data: String,
 }
