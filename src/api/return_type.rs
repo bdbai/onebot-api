@@ -1,4 +1,3 @@
-use super::arg_type::*;
 use crate::event::message::{
 	GroupMessageSender, GroupMessageSenderRole, PrivateMessageSender, Sex,
 };
@@ -6,7 +5,6 @@ use crate::message::receive_segment::ReceiveSegment;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 #[derive(Deserialize)]
 pub struct GetMsgResponse {
@@ -36,6 +34,11 @@ pub enum Sender {
 pub struct GetLoginInfoResponse {
 	pub user_id: i32,
 	pub nickname: String,
+}
+
+#[derive(Deserialize)]
+pub struct GetForwardMsgResponse {
+	pub message: Vec<ReceiveSegment>,
 }
 
 #[derive(Deserialize)]

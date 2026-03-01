@@ -1,10 +1,12 @@
-use async_trait::async_trait;
-
-mod communication_utils;
+#[cfg(feature = "combiner")]
+pub mod combiner;
+#[cfg(feature = "http")]
 pub mod http;
+#[cfg(feature = "http-post")]
 pub mod http_post;
-mod sse;
+#[cfg(feature = "sse")]
+pub mod sse;
+pub mod utils;
+#[cfg(feature = "websocket")]
 pub mod ws;
 pub mod ws_reverse;
-
-pub use communication_utils::Client;

@@ -1,6 +1,5 @@
 use crate::message::receive_segment::ReceiveSegment;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 #[derive(Deserialize, Debug, Clone)]
 pub enum Sex {
@@ -42,10 +41,10 @@ pub enum MessageEvent {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct PrivateMessageSender {
-	user_id: Option<i64>,
-	nickname: Option<String>,
-	sex: Option<Sex>,
-	age: Option<i32>,
+	pub user_id: Option<i64>,
+	pub nickname: Option<String>,
+	pub sex: Option<Sex>,
+	pub age: Option<i32>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -67,15 +66,15 @@ pub struct GroupMessageAnonymous {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct GroupMessageSender {
-	user_id: Option<i64>,
-	nickname: Option<String>,
-	card: Option<String>,
-	sex: Option<Sex>,
-	age: Option<i32>,
-	area: Option<String>,
-	level: Option<String>,
-	role: Option<GroupMessageSenderRole>,
-	title: Option<String>,
+	pub user_id: Option<i64>,
+	pub nickname: Option<String>,
+	pub card: Option<String>,
+	pub sex: Option<Sex>,
+	pub age: Option<i32>,
+	pub area: Option<String>,
+	pub level: Option<String>,
+	pub role: Option<GroupMessageSenderRole>,
+	pub title: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

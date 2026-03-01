@@ -1,8 +1,15 @@
 use super::send_segment::*;
+use super::utils::*;
 
 #[derive(Default, Debug, Clone)]
 pub struct SegmentBuilder {
 	segments: Vec<SendSegment>,
+}
+
+impl From<Vec<SendSegment>> for SegmentBuilder {
+	fn from(value: Vec<SendSegment>) -> Self {
+		Self { segments: value }
+	}
 }
 
 impl SegmentBuilder {
@@ -14,31 +21,33 @@ impl SegmentBuilder {
 		self.segments
 	}
 
-	pub fn text(mut self, text: String) -> Self {
+	pub fn text(mut self, text: impl ToString) -> Self {
 		self.segments.push(SendSegment::Text {
-			data: TextData { text },
+			data: TextData {
+				text: text.to_string(),
+			},
 		});
 		self
 	}
 
-	pub fn face(mut self, id: String) -> Self {
+	pub fn face(mut self, id: impl ToString) -> Self {
 		self.segments.push(SendSegment::Face {
-			data: FaceData { id },
+			data: FaceData { id: id.to_string() },
 		});
 		self
 	}
 
 	pub fn image(
 		mut self,
-		file: String,
-		image_type: Option<String>,
+		file: impl ToString,
+		image_type: Option<ImageType>,
 		cache: Option<bool>,
 		proxy: Option<bool>,
-		timeout: Option<bool>,
+		timeout: Option<i32>,
 	) -> Self {
 		self.segments.push(SendSegment::Image {
 			data: ImageData {
-				file,
+				file: file.to_string(),
 				image_type,
 				cache,
 				proxy,
@@ -50,16 +59,16 @@ impl SegmentBuilder {
 
 	pub fn record(
 		mut self,
-		file: String,
-		magic: String,
+		file: impl ToString,
+		magic: impl ToString,
 		cache: Option<bool>,
 		proxy: Option<bool>,
-		timeout: Option<bool>,
+		timeout: Option<i32>,
 	) -> Self {
 		self.segments.push(SendSegment::Record {
 			data: RecordData {
-				file,
-				magic,
+				file: file.to_string(),
+				magic: magic.to_string(),
 				cache,
 				proxy,
 				timeout,
@@ -70,14 +79,14 @@ impl SegmentBuilder {
 
 	pub fn video(
 		mut self,
-		file: String,
+		file: impl ToString,
 		cache: Option<bool>,
 		proxy: Option<bool>,
-		timeout: Option<bool>,
+		timeout: Option<i32>,
 	) -> Self {
 		self.segments.push(SendSegment::Video {
 			data: VideoData {
-				file,
+				file: file.to_string(),
 				cache,
 				proxy,
 				timeout,
@@ -86,7 +95,7 @@ impl SegmentBuilder {
 		self
 	}
 
-	pub fn at(mut self, qq: String) -> Self {
+	pub fn at(mut self, qq: AtType) -> Self {
 		self.segments.push(SendSegment::At {
 			data: AtData { qq },
 		});
@@ -110,9 +119,12 @@ impl SegmentBuilder {
 		self
 	}
 
-	pub fn poke(mut self, poke_type: String, id: String) -> Self {
+	pub fn poke(mut self, poke_type: impl ToString, id: impl ToString) -> Self {
 		self.segments.push(SendSegment::Poke {
-			data: PokeData { poke_type, id },
+			data: PokeData {
+				poke_type: poke_type.to_string(),
+				id: id.to_string(),
+			},
 		});
 		self
 	}
@@ -124,44 +136,53 @@ impl SegmentBuilder {
 		self
 	}
 
-	pub fn share(mut self, url: String, title: String, content: String, image: String) -> Self {
+	pub fn share(
+		mut self,
+		url: impl ToString,
+		title: impl ToString,
+		content: impl ToString,
+		image: impl ToString,
+	) -> Self {
 		self.segments.push(SendSegment::Share {
 			data: ShareData {
-				url,
-				title,
-				content,
-				image,
+				url: url.to_string(),
+				title: title.to_string(),
+				content: content.to_string(),
+				image: image.to_string(),
 			},
 		});
 		self
 	}
 
-	pub fn contact(mut self, contact_type: String, id: String) -> Self {
+	pub fn contact(mut self, contact_type: ContactType, id: impl ToString) -> Self {
 		self.segments.push(SendSegment::Contact {
-			data: ContactData { contact_type, id },
+			data: ContactData {
+				contact_type,
+				id: id.to_string(),
+			},
 		});
 		self
 	}
 
-	pub fn contact_qq(self, id: String) -> Self {
-		self.contact("qq".to_string(), id)
+	pub fn contact_qq(self, id: impl ToString) -> Self {
+		self.contact(ContactType::QQ, id)
 	}
 
-	pub fn contact_group(self, id: String) -> Self {
-		self.contact("group".to_string(), id)
+	pub fn contact_group(self, id: impl ToString) -> Self {
+		self.contact(ContactType::Group, id)
 	}
 
 	pub fn location(
 		mut self,
-		lat: String,
-		lon: String,
+		lat: impl ToString,
+		lon: impl ToString,
 		title: Option<String>,
 		content: Option<String>,
 	) -> Self {
 		self.segments.push(SendSegment::Location {
 			data: LocationData {
-				lat,
-				lon,
+				lat: lat.to_string(),
+				lon: lon.to_string(),
 				title,
 				content,
 			},
@@ -172,7 +193,7 @@ impl SegmentBuilder {
 	#[allow(clippy::too_many_arguments)]
 	pub fn music(
 		mut self,
-		music_type: String,
+		music_type: MusicType,
 		id: Option<String>,
 		url: Option<String>,
 		audio: Option<String>,
@@ -194,44 +215,52 @@ impl SegmentBuilder {
 		self
 	}
 
-	pub fn music_typed(self, music_type: String, id: String) -> Self {
-		self.music(music_type, Some(id), None, None, None, None, None)
+	pub fn music_typed(self, music_type: MusicType, id: impl ToString) -> Self {
+		self.music(
+			music_type,
+			Some(id.to_string()),
+			None,
+			None,
+			None,
+			None,
+			None,
+		)
 	}
 
-	pub fn music_qq(self, id: String) -> Self {
-		self.music_typed("qq".to_string(), id)
+	pub fn music_qq(self, id: impl ToString) -> Self {
+		self.music_typed(MusicType::QQ, id)
 	}
 
-	pub fn music_163(self, id: String) -> Self {
-		self.music_typed("163".to_string(), id)
+	pub fn music_163(self, id: impl ToString) -> Self {
+		self.music_typed(MusicType::NetEaseCloudMusic, id)
 	}
 
-	pub fn music_xm(self, id: String) -> Self {
-		self.music_typed("xm".to_string(), id)
+	pub fn music_xm(self, id: impl ToString) -> Self {
+		self.music_typed(MusicType::Xm, id)
 	}
 
 	pub fn music_custom(
 		self,
-		url: String,
-		audio: String,
-		title: String,
-		content: String,
-		image: String,
+		url: impl ToString,
+		audio: impl ToString,
+		title: impl ToString,
+		content: impl ToString,
+		image: impl ToString,
 	) -> Self {
 		self.music(
-			"custom".to_string(),
+			MusicType::Custom,
 			None,
-			Some(url),
-			Some(audio),
-			Some(title),
-			Some(content),
-			Some(image),
+			Some(url.to_string()),
+			Some(audio.to_string()),
+			Some(title.to_string()),
+			Some(content.to_string()),
+			Some(image.to_string()),
 		)
 	}
 
-	pub fn reply(mut self, id: String) -> Self {
+	pub fn reply(mut self, id: impl ToString) -> Self {
 		self.segments.push(SendSegment::Reply {
-			data: ReplyData { id },
+			data: ReplyData { id: id.to_string() },
 		});
 		self
 	}
@@ -261,25 +290,48 @@ impl SegmentBuilder {
 		self
 	}
 
-	pub fn node_forward(self, id: String) -> Self {
-		self.node(Some(id), None, None, None)
+	pub fn node_forward(self, id: impl ToString) -> Self {
+		self.node(Some(id.to_string()), None, None, None)
 	}
 
-	pub fn node_custom(self, user_id: String, nickname: String, content: Vec<SendSegment>) -> Self {
-		self.node(None, Some(user_id), Some(nickname), Some(content))
+	pub fn node_custom(
+		self,
+		user_id: impl ToString,
+		nickname: impl ToString,
+		content: Vec<SendSegment>,
+	) -> Self {
+		self.node(
+			None,
+			Some(user_id.to_string()),
+			Some(nickname.to_string()),
+			Some(content),
+		)
 	}
 
-	pub fn xml(mut self, data: String) -> Self {
+	pub fn xml(mut self, data: impl ToString) -> Self {
 		self.segments.push(SendSegment::Xml {
-			data: XmlData { data },
+			data: XmlData {
+				data: data.to_string(),
+			},
 		});
 		self
 	}
 
-	pub fn json(mut self, data: String) -> Self {
+	pub fn json(mut self, data: impl ToString) -> Self {
 		self.segments.push(SendSegment::Json {
-			data: JsonData { data },
+			data: JsonData {
+				data: data.to_string(),
+			},
 		});
 		self
 	}
+}
+
+#[macro_export]
+macro_rules! text {
+	( $( $arg: tt )* ) => {
+		{
+			$crate::message::segment_builder::SegmentBuilder::new().text( format!( $( $arg )* ) ).build()
+		}
+	};
 }
