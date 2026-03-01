@@ -13,7 +13,7 @@ use tokio::sync::broadcast;
 
 type HmacSha1 = Hmac<Sha1>;
 
-pub struct HttpPost<T: ToSocketAddrs + Clone + Send + Sync> {
+pub struct HttpPostService<T: ToSocketAddrs + Clone + Send + Sync> {
 	addr: T,
 	hmac: Option<HmacSha1>,
 	event_sender: Option<EventSender>,
@@ -21,13 +21,13 @@ pub struct HttpPost<T: ToSocketAddrs + Clone + Send + Sync> {
 	prefix: String,
 }
 
-impl<T: ToSocketAddrs + Clone + Send + Sync> Drop for HttpPost<T> {
+impl<T: ToSocketAddrs + Clone + Send + Sync> Drop for HttpPostService<T> {
 	fn drop(&mut self) {
 		let _ = self.close_signal_sender.send(());
 	}
 }
 
-impl<T: ToSocketAddrs + Clone + Send + Sync> HttpPost<T> {
+impl<T: ToSocketAddrs + Clone + Send + Sync> HttpPostService<T> {
 	pub fn new(addr: T, prefix: Option<String>, secret: Option<String>) -> anyhow::Result<Self> {
 		let (close_signal_sender, _) = broadcast::channel(1);
 		let hmac = if let Some(secret) = secret {
@@ -83,7 +83,7 @@ async fn processor(
 }
 
 #[async_trait]
-impl<T: ToSocketAddrs + Clone + Send + Sync> CommunicationService for HttpPost<T> {
+impl<T: ToSocketAddrs + Clone + Send + Sync> CommunicationService for HttpPostService<T> {
 	fn inject(&mut self, _api_receiver: APIReceiver, event_sender: EventSender) {
 		self.event_sender = Some(event_sender);
 	}

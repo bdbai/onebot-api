@@ -138,19 +138,21 @@ async fn handler(
 		let api_receiver = state.api_receiver.clone();
 		let event_sender = state.event_sender.clone();
 		state.connected.store(true, Ordering::Relaxed);
-		tokio::spawn(send_processor(
+		let send_task = tokio::spawn(send_processor(
 			send_side,
 			api_receiver,
 			state.close_signal_sender.subscribe(),
 			connection_close_signal,
 		));
-		tokio::spawn(read_processor(
+		let read_task = tokio::spawn(read_processor(
 			read_side,
 			event_sender,
 			state.close_signal_sender.subscribe(),
 			connection_close_signal_sender,
 			Arc::clone(&state.connected),
 		));
+		let (r1, r2) = futures::try_join!(send_task, read_task).unwrap();
+		r1.and(r2).unwrap();
 	})
 }
 
