@@ -111,6 +111,17 @@ pub trait CommunicationService: Sync + Send {
 	async fn start_service(&self) -> anyhow::Result<()>;
 }
 
+#[async_trait]
+impl CommunicationService for Box<dyn CommunicationService> {
+	fn inject(&mut self, api_receiver: APIReceiver, event_sender: EventSender) {
+		(**self).inject(api_receiver, event_sender);
+	}
+
+	async fn start_service(&self) -> anyhow::Result<()> {
+		(**self).start_service().await
+	}
+}
+
 pub trait IntoService {
 	fn into(self) -> impl CommunicationService + 'static;
 }

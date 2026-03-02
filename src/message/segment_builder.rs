@@ -1,4 +1,5 @@
 use super::send_segment::*;
+use super::signal_segment_builder::*;
 use super::utils::*;
 
 #[derive(Default, Debug, Clone)]
@@ -21,147 +22,145 @@ impl SegmentBuilder {
 		self.segments
 	}
 
-	pub fn text(mut self, text: impl ToString) -> Self {
-		self.segments.push(SendSegment::Text {
-			data: TextData {
-				text: text.to_string(),
-			},
-		});
+	pub fn push(&mut self, segment: impl SendSegmentData) {
+		self.segments.push(segment.into_send_segment());
+	}
+
+	pub fn and_push(mut self, segment: impl SendSegmentData) -> Self {
+		self.segments.push(segment.into_send_segment());
 		self
 	}
 
-	pub fn face(mut self, id: impl ToString) -> Self {
-		self.segments.push(SendSegment::Face {
-			data: FaceData { id: id.to_string() },
-		});
-		self
+	pub fn text(self, text: impl ToString) -> Self {
+		self.and_push(TextData {
+			text: text.to_string(),
+		})
 	}
 
-	pub fn image(
-		mut self,
+	pub fn face(self, id: impl ToString) -> Self {
+		self.and_push(FaceData { id: id.to_string() })
+	}
+
+	pub fn image_with_options(
+		self,
 		file: impl ToString,
 		image_type: Option<ImageType>,
 		cache: Option<bool>,
 		proxy: Option<bool>,
 		timeout: Option<i32>,
 	) -> Self {
-		self.segments.push(SendSegment::Image {
-			data: ImageData {
-				file: file.to_string(),
-				image_type,
-				cache,
-				proxy,
-				timeout,
-			},
-		});
-		self
+		self.and_push(ImageData {
+			file: file.to_string(),
+			image_type,
+			cache,
+			proxy,
+			timeout,
+		})
 	}
 
-	pub fn record(
-		mut self,
+	pub fn image(self, file: impl ToString) -> Self {
+		self.image_with_options(file, None, None, None, None)
+	}
+
+	pub fn image_builder(self, file: impl ToString) -> ImageDataBuilder {
+		ImageDataBuilder::new(self, file)
+	}
+
+	pub fn record_with_options(
+		self,
 		file: impl ToString,
-		magic: impl ToString,
+		magic: Option<String>,
 		cache: Option<bool>,
 		proxy: Option<bool>,
 		timeout: Option<i32>,
 	) -> Self {
-		self.segments.push(SendSegment::Record {
-			data: RecordData {
-				file: file.to_string(),
-				magic: magic.to_string(),
-				cache,
-				proxy,
-				timeout,
-			},
-		});
-		self
+		self.and_push(RecordData {
+			file: file.to_string(),
+			magic,
+			cache,
+			proxy,
+			timeout,
+		})
 	}
 
-	pub fn video(
-		mut self,
+	pub fn record(self, file: impl ToString) -> Self {
+		self.record_with_options(file, None, None, None, None)
+	}
+
+	pub fn video_with_options(
+		self,
 		file: impl ToString,
 		cache: Option<bool>,
 		proxy: Option<bool>,
 		timeout: Option<i32>,
 	) -> Self {
-		self.segments.push(SendSegment::Video {
-			data: VideoData {
-				file: file.to_string(),
-				cache,
-				proxy,
-				timeout,
-			},
-		});
-		self
+		self.and_push(VideoData {
+			file: file.to_string(),
+			cache,
+			proxy,
+			timeout,
+		})
 	}
 
-	pub fn at(mut self, qq: AtType) -> Self {
-		self.segments.push(SendSegment::At {
-			data: AtData { qq },
-		});
-		self
+	pub fn video(self, file: impl ToString) -> Self {
+		self.video_with_options(file, None, None, None)
 	}
 
-	pub fn rps(mut self) -> Self {
-		self.segments.push(SendSegment::Rps { data: RpsData {} });
-		self
+	pub fn at(self, qq: AtType) -> Self {
+		self.and_push(AtData { qq })
 	}
 
-	pub fn dice(mut self) -> Self {
-		self.segments.push(SendSegment::Dice { data: DiceData {} });
-		self
+	pub fn at_all(self) -> Self {
+		self.at(AtType::All)
 	}
 
-	pub fn shake(mut self) -> Self {
-		self
-			.segments
-			.push(SendSegment::Shake { data: ShakeData {} });
-		self
+	pub fn at_id(self, id: String) -> Self {
+		self.at(AtType::Id(id))
 	}
 
-	pub fn poke(mut self, poke_type: impl ToString, id: impl ToString) -> Self {
-		self.segments.push(SendSegment::Poke {
-			data: PokeData {
-				poke_type: poke_type.to_string(),
-				id: id.to_string(),
-			},
-		});
-		self
+	pub fn rps(self) -> Self {
+		self.and_push(RpsData {})
 	}
 
-	pub fn anonymous(mut self, ignore: Option<bool>) -> Self {
-		self.segments.push(SendSegment::Anonymous {
-			data: AnonymousData { ignore },
-		});
-		self
+	pub fn dice(self) -> Self {
+		self.and_push(DiceData {})
+	}
+
+	pub fn shake(self) -> Self {
+		self.and_push(ShakeData {})
+	}
+
+	pub fn poke(self, poke_type: impl ToString, id: impl ToString) -> Self {
+		self.and_push(PokeData {
+			poke_type: poke_type.to_string(),
+			id: id.to_string(),
+		})
+	}
+
+	pub fn anonymous(self, ignore: Option<bool>) -> Self {
+		self.and_push(AnonymousData { ignore })
 	}
 
 	pub fn share(
-		mut self,
+		self,
 		url: impl ToString,
 		title: impl ToString,
 		content: impl ToString,
 		image: impl ToString,
 	) -> Self {
-		self.segments.push(SendSegment::Share {
-			data: ShareData {
-				url: url.to_string(),
-				title: title.to_string(),
-				content: content.to_string(),
-				image: image.to_string(),
-			},
-		});
-		self
+		self.and_push(ShareData {
+			url: url.to_string(),
+			title: title.to_string(),
+			content: content.to_string(),
+			image: image.to_string(),
+		})
 	}
 
-	pub fn contact(mut self, contact_type: ContactType, id: impl ToString) -> Self {
-		self.segments.push(SendSegment::Contact {
-			data: ContactData {
-				contact_type,
-				id: id.to_string(),
-			},
-		});
-		self
+	pub fn contact(self, contact_type: ContactType, id: impl ToString) -> Self {
+		self.and_push(ContactData {
+			contact_type,
+			id: id.to_string(),
+		})
 	}
 
 	pub fn contact_qq(self, id: impl ToString) -> Self {
@@ -173,26 +172,23 @@ impl SegmentBuilder {
 	}
 
 	pub fn location(
-		mut self,
+		self,
 		lat: impl ToString,
 		lon: impl ToString,
 		title: Option<String>,
 		content: Option<String>,
 	) -> Self {
-		self.segments.push(SendSegment::Location {
-			data: LocationData {
-				lat: lat.to_string(),
-				lon: lon.to_string(),
-				title,
-				content,
-			},
-		});
-		self
+		self.and_push(LocationData {
+			lat: lat.to_string(),
+			lon: lon.to_string(),
+			title,
+			content,
+		})
 	}
 
 	#[allow(clippy::too_many_arguments)]
 	pub fn music(
-		mut self,
+		self,
 		music_type: MusicType,
 		id: Option<String>,
 		url: Option<String>,
@@ -201,18 +197,15 @@ impl SegmentBuilder {
 		content: Option<String>,
 		image: Option<String>,
 	) -> Self {
-		self.segments.push(SendSegment::Music {
-			data: MusicData {
-				music_type,
-				id,
-				url,
-				audio,
-				title,
-				content,
-				image,
-			},
-		});
-		self
+		self.and_push(MusicData {
+			music_type,
+			id,
+			url,
+			audio,
+			title,
+			content,
+			image,
+		})
 	}
 
 	pub fn music_typed(self, music_type: MusicType, id: impl ToString) -> Self {
@@ -258,36 +251,27 @@ impl SegmentBuilder {
 		)
 	}
 
-	pub fn reply(mut self, id: impl ToString) -> Self {
-		self.segments.push(SendSegment::Reply {
-			data: ReplyData { id: id.to_string() },
-		});
-		self
+	pub fn reply(self, id: impl ToString) -> Self {
+		self.and_push(ReplyData { id: id.to_string() })
 	}
 
-	pub fn forward(mut self) -> Self {
-		self.segments.push(SendSegment::Forward {
-			data: ForwardData {},
-		});
-		self
+	pub fn forward(self) -> Self {
+		self.and_push(ForwardData {})
 	}
 
 	pub fn node(
-		mut self,
+		self,
 		id: Option<String>,
 		user_id: Option<String>,
 		nickname: Option<String>,
 		content: Option<Vec<SendSegment>>,
 	) -> Self {
-		self.segments.push(SendSegment::Node {
-			data: NodeData {
-				id,
-				user_id,
-				nickname,
-				content,
-			},
-		});
-		self
+		self.and_push(NodeData {
+			id,
+			user_id,
+			nickname,
+			content,
+		})
 	}
 
 	pub fn node_forward(self, id: impl ToString) -> Self {
@@ -308,22 +292,16 @@ impl SegmentBuilder {
 		)
 	}
 
-	pub fn xml(mut self, data: impl ToString) -> Self {
-		self.segments.push(SendSegment::Xml {
-			data: XmlData {
-				data: data.to_string(),
-			},
-		});
-		self
+	pub fn xml(self, data: impl ToString) -> Self {
+		self.and_push(XmlData {
+			data: data.to_string(),
+		})
 	}
 
-	pub fn json(mut self, data: impl ToString) -> Self {
-		self.segments.push(SendSegment::Json {
-			data: JsonData {
-				data: data.to_string(),
-			},
-		});
-		self
+	pub fn json(self, data: impl ToString) -> Self {
+		self.and_push(JsonData {
+			data: data.to_string(),
+		})
 	}
 }
 
