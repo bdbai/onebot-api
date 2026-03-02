@@ -1,6 +1,16 @@
 use super::utils::*;
 use serde::Serialize;
 
+pub trait SendSegmentData: Clone + Serialize {
+	fn into_send_segment(self) -> SendSegment;
+}
+
+impl<T: SendSegmentData> From<T> for SendSegment {
+	fn from(value: T) -> Self {
+		value.into_send_segment()
+	}
+}
+
 #[derive(Serialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum SendSegment {
@@ -72,6 +82,12 @@ pub struct TextData {
 	pub text: String,
 }
 
+impl SendSegmentData for TextData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Text { data: self }
+	}
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct FaceData {
 	/// # 说明
@@ -79,6 +95,12 @@ pub struct FaceData {
 	/// # 可能的值
 	/// 见 [QQ 表情 ID 表](https://github.com/richardchien/coolq-http-api/wiki/%E8%A1%A8%E6%83%85-CQ-%E7%A0%81-ID-%E8%A1%A8)
 	pub id: String,
+}
+
+impl SendSegmentData for FaceData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Face { data: self }
+	}
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -112,6 +134,12 @@ pub struct ImageData {
 	pub timeout: Option<i32>,
 }
 
+impl SendSegmentData for ImageData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Image { data: self }
+	}
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct RecordData {
 	/// # 说明
@@ -123,7 +151,7 @@ pub struct RecordData {
 	/// 发送时可选，默认 `0`，设置为 `1` 表示变声
 	/// # 可能的值
 	/// `0` `1`
-	pub magic: String,
+	pub magic: Option<String>,
 	/// # 说明
 	/// 只在通过网络 URL 发送时有效，表示是否使用已缓存的文件，默认 `1`
 	/// # 可能的值
@@ -137,6 +165,12 @@ pub struct RecordData {
 	/// # 说明
 	/// 只在通过网络 URL 发送时有效，单位秒，表示下载网络文件的超时时间，默认不超时
 	pub timeout: Option<i32>,
+}
+
+impl SendSegmentData for RecordData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Record { data: self }
+	}
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -161,6 +195,12 @@ pub struct VideoData {
 	pub timeout: Option<i32>,
 }
 
+impl SendSegmentData for VideoData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Video { data: self }
+	}
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct AtData {
 	/// # 说明
@@ -170,14 +210,38 @@ pub struct AtData {
 	pub qq: AtType,
 }
 
+impl SendSegmentData for AtData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::At { data: self }
+	}
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct RpsData {}
+
+impl SendSegmentData for RpsData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Rps { data: self }
+	}
+}
 
 #[derive(Serialize, Debug, Clone)]
 pub struct DiceData {}
 
+impl SendSegmentData for DiceData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Dice { data: self }
+	}
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct ShakeData {}
+
+impl SendSegmentData for ShakeData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Shake { data: self }
+	}
+}
 
 #[derive(Serialize, Debug, Clone)]
 pub struct PokeData {
@@ -194,6 +258,12 @@ pub struct PokeData {
 	pub id: String,
 }
 
+impl SendSegmentData for PokeData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Poke { data: self }
+	}
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct AnonymousData {
 	/// # 说明
@@ -201,6 +271,12 @@ pub struct AnonymousData {
 	/// # 可能的值
 	/// `0` `1`
 	pub ignore: Option<bool>,
+}
+
+impl SendSegmentData for AnonymousData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Anonymous { data: self }
+	}
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -219,6 +295,12 @@ pub struct ShareData {
 	pub image: String,
 }
 
+impl SendSegmentData for ShareData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Share { data: self }
+	}
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct ContactData {
 	#[serde(rename = "type")]
@@ -228,6 +310,12 @@ pub struct ContactData {
 	/// # 说明
 	/// 被推荐人的 QQ 号/被推荐群的群号
 	pub id: String,
+}
+
+impl SendSegmentData for ContactData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Contact { data: self }
+	}
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -244,6 +332,12 @@ pub struct LocationData {
 	/// # 说明
 	/// 发送时可选，内容描述
 	pub content: Option<String>,
+}
+
+impl SendSegmentData for LocationData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Location { data: self }
+	}
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -274,6 +368,12 @@ pub struct MusicData {
 	pub image: Option<String>,
 }
 
+impl SendSegmentData for MusicData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Music { data: self }
+	}
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct ReplyData {
 	/// # 说明
@@ -281,8 +381,20 @@ pub struct ReplyData {
 	pub id: String,
 }
 
+impl SendSegmentData for ReplyData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Reply { data: self }
+	}
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct ForwardData {}
+
+impl SendSegmentData for ForwardData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Forward { data: self }
+	}
+}
 
 #[derive(Serialize, Debug, Clone)]
 pub struct NodeData {
@@ -300,6 +412,12 @@ pub struct NodeData {
 	pub content: Option<Vec<SendSegment>>,
 }
 
+impl SendSegmentData for NodeData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Node { data: self }
+	}
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct XmlData {
 	/// # 说明
@@ -307,9 +425,21 @@ pub struct XmlData {
 	pub data: String,
 }
 
+impl SendSegmentData for XmlData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Xml { data: self }
+	}
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct JsonData {
 	/// 说明
 	/// JSON 内容
 	pub data: String,
+}
+
+impl SendSegmentData for JsonData {
+	fn into_send_segment(self) -> SendSegment {
+		SendSegment::Json { data: self }
+	}
 }
