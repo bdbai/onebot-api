@@ -4,7 +4,11 @@ version = "1.0.1"
 edition = "2024"
 authors = ["Alex Chen <m.ac.alexchen@outlook.com>"]
 description = "Onebot API"
+repository = "https://github.com/ACAlexChen/onebot-api.git"
+homepage = "https://github.com/ACAlexChen/onebot-api"
 license = "MIT"
+license-file = "LICENSE"
+readme = "README.md"
 
 [dependencies]
 anyhow = "1.0.100"

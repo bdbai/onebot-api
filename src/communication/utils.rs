@@ -106,7 +106,7 @@ impl APIResponseListener for BroadcastReceiver<Arc<Event>> {
 }
 
 #[async_trait]
-pub trait CommunicationService: Sync + Send {
+pub trait CommunicationService: Sync + Send + Drop {
 	fn inject(&mut self, api_receiver: APIReceiver, event_sender: EventSender);
 	async fn start_service(&self) -> anyhow::Result<()>;
 }

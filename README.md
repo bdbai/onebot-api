@@ -5,11 +5,15 @@
 
 # 核心概念
 ## `Client`
-`Client` 是高层客户端的入口，封装了API调用、事件推送等核心逻辑  
-`Client` 通过 **依赖注入** 将 API调用、事件推送等逻辑层服务 与 具体协议 进行了解耦  
-因此，`Client` 提供了 **协议无关** 的API接口和事件推送服务  
-用户使用 `Client` 时无需关心底层连接是使用 正向WebSocket 还是 反向WebSocket 还是 其他协议  
-同时，`Client` 还提供了运行时态更换底层协议的能力
+`Client` 是高层客户端的入口，封装了API调用、事件推送等核心逻辑层服务  
+`Client` 内部使用了 `flume` 作为API调用通道（***mpsc***），`tokio broadcast` 作为事件通道（***mpmc***）  
+在与底层协议的交互方面，`Client` 内部使用了 **特征对象** 和 **依赖注入** ，这使得 `Client` 具备 **协议无关** 的特性  
+因此，`Client` 需要且仅需要专注于 **API调用** 与 **事件推送** 等核心逻辑层服务，对于底层协议的交互，则使用外部依赖实现  
+由此，`Client` 实现了逻辑层于协议层的解耦，也使得 `Client` 具备运行时切换底层协议的能力  
+另外，由于 `Client` 与底层协议交互时使用了消息通道  
+因此，`Client` 天然具备 **线程安全** 并且不需要锁来防止竞态条件（`Arc<Client>`🤓☝️ | `Arc<Mutex<Client>>`👎😡）  
+对于资源管理方面，`Client` 实现了 `Drop` 特征，在 `Client` 析构时会自动清理其产生的所有资源  
+但 `Client` 并不会清理外部依赖所产生的资源，这依赖于外部依赖的析构函数（本库中所有实现了 `CommunicationService` 的结构都实现了 `Drop` 特征）
 
 ## `CommunicationService`
 `CommunicationService` 是 `Client` 与底层协议交互的基础  
@@ -346,3 +350,10 @@ async fn main() {
 ```
 在 `text` 宏的内部使用了 `format` 宏  
 因此，你可以像使用 `println` 宏一样使用 `text` 宏
+
+# Todo List
+- `WsService` 自动重连
+- `SseService` 自动重连
+- 更精细化的错误处理
+
+

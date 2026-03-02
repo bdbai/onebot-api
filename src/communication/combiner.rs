@@ -120,6 +120,10 @@ impl<S: CommunicationService, R: CommunicationService> BothEventCombiner<S, R> {
 	}
 }
 
+impl<S: CommunicationService, R: CommunicationService> Drop for BothEventCombiner<S, R> {
+	fn drop(&mut self) {}
+}
+
 #[async_trait]
 impl<S: CommunicationService, R: CommunicationService> CommunicationService
 	for BothEventCombiner<S, R>

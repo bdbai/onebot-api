@@ -17,6 +17,12 @@ pub struct SseService {
 	close_signal_sender: broadcast::Sender<()>,
 }
 
+impl Drop for SseService {
+	fn drop(&mut self) {
+		let _ = self.close_signal_sender.send(());
+	}
+}
+
 impl SseService {
 	pub fn new(url: impl IntoUrl, access_token: Option<String>) -> reqwest::Result<Self> {
 		let (close_signal_sender, _) = broadcast::channel(1);
