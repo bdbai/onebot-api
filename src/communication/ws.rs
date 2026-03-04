@@ -173,10 +173,7 @@ impl WsService {
 		loop {
 			select! {
 				_ = close_signal.recv() => return Err(anyhow::anyhow!("close")),
-				_ = connection_close_signal.recv() => {
-					tokio::time::sleep(self.reconnect_interval).await;
-					self.reconnect(1).await?;
-				}
+				_ = connection_close_signal.recv() => self.reconnect(1).await?
 			}
 		}
 	}

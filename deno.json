@@ -1,0 +1,11 @@
+{
+  "tasks": {
+    "publish-release": "deno run -A scripts/publish-release.ts"
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1",
+    "@octokit/rest": "https://esm.sh/@octokit/rest",
+    "@std/path": "jsr:@std/path@^1.1.4",
+    "@std/toml": "jsr:@std/toml@^1.0.11"
+  }
+}

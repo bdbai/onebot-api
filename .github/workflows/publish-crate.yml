@@ -1,4 +1,4 @@
-name: publish
+name: publish-crate
 
 
 on:
@@ -6,7 +6,7 @@ on:
     types: [published]
 
 jobs:
-  publish:
+  publish-crate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
