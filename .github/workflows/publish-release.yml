@@ -1,0 +1,36 @@
+name: publish-release
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  publish-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: lts
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Debug PATH and cargo
+        run: |
+          echo "PATH: $PATH"
+          which cargo
+          cargo --version
+
+      - name: Run Script
+        run: deno task publish-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_PUBLISH: ${{ secrets.CARGO_PUBLISH }}
