@@ -23,6 +23,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup PATH for Rust
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Debug PATH and cargo
+        run: |
+          echo "PATH: $PATH"
+          which cargo
+          cargo --version
+
       - name: Run Script
         run: deno task publish-release
         env:
