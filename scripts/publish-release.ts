@@ -92,7 +92,7 @@ async function main() {
     generate_release_notes: true
   })
 
-  await runScript(["cargo", "publish", "--token", "${CARGO_PUBLISH}"], baseDir)
+  await runScript(["cargo", "publish", "--token", CARGO_PUBLISH], baseDir)
 
 }
 

@@ -15,6 +15,9 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup PATH for Rust
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
       - name: Publish to crates.io
         run: cargo publish --token ${CARGO_PUBLISH}
         env:
