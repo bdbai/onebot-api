@@ -5,6 +5,7 @@ use reqwest::IntoUrl;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::select;
 use tokio::sync::broadcast;
 use url::Url;
@@ -13,9 +14,10 @@ use url::Url;
 pub struct HttpService {
 	url: Url,
 	access_token: Option<String>,
-	api_receiver: Option<APIReceiver>,
-	event_sender: Option<EventSender>,
+	api_receiver: Option<InternalAPIReceiver>,
+	event_sender: Option<InternalEventSender>,
 	close_signal_sender: broadcast::Sender<()>,
+	is_running: Arc<AtomicBool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -34,6 +36,7 @@ impl HttpService {
 			api_receiver: None,
 			event_sender: None,
 			close_signal_sender,
+			is_running: Arc::new(AtomicBool::new(false)),
 		})
 	}
 
@@ -55,7 +58,7 @@ impl HttpService {
 					if event.is_err() {
 						continue
 					}
-					let _ = event_sender.send(Arc::new(event?));
+					let _ = event_sender.send_async(event?).await;
 				}
 			}
 		}
@@ -87,7 +90,7 @@ impl HttpService {
 		&self,
 		echo: Option<String>,
 		response: reqwest::Response,
-	) -> anyhow::Result<Event> {
+	) -> anyhow::Result<DeserializedEvent> {
 		let status = response.status();
 		if !status.is_success() {
 			let res = APIResponse {
@@ -96,7 +99,7 @@ impl HttpService {
 				retcode: status.as_u16() as i32,
 				status: "failed".to_string(),
 			};
-			Ok(Event::APIResponse(res))
+			Ok(DeserializedEvent::APIResponse(res))
 		} else {
 			let http_res: HttpResponse = response.json().await?;
 			let res = APIResponse {
@@ -105,25 +108,40 @@ impl HttpService {
 				status: http_res.status,
 				retcode: http_res.retcode,
 			};
-			Ok(Event::APIResponse(res))
+			Ok(DeserializedEvent::APIResponse(res))
 		}
 	}
 }
 
 impl Drop for HttpService {
 	fn drop(&mut self) {
-		let _ = self.close_signal_sender.send(());
+		self.uninstall();
 	}
 }
 
 #[async_trait]
 impl CommunicationService for HttpService {
-	fn inject(&mut self, api_receiver: APIReceiver, event_sender: EventSender) {
+	fn install(&mut self, api_receiver: InternalAPIReceiver, event_sender: InternalEventSender) {
 		self.api_receiver = Some(api_receiver);
 		self.event_sender = Some(event_sender);
 	}
 
-	async fn start_service(&self) -> ServiceStartResult<()> {
+	fn uninstall(&mut self) {
+		self.stop();
+		self.api_receiver = None;
+		self.event_sender = None;
+	}
+
+	fn stop(&self) {
+		let _ = self.close_signal_sender.send(());
+		self.is_running.store(false, Ordering::Relaxed);
+	}
+
+	async fn start(&self) -> ServiceStartResult<()> {
+		if self.is_running.load(Ordering::Relaxed) {
+			return Err(ServiceStartError::TaskIsRunning);
+		}
+
 		if self.api_receiver.is_none() && self.event_sender.is_none() {
 			return Err(ServiceStartError::NotInjected);
 		} else if self.event_sender.is_none() {
@@ -132,6 +150,7 @@ impl CommunicationService for HttpService {
 			return Err(ServiceStartError::NotInjectedAPIReceiver);
 		}
 
+		self.is_running.store(true, Ordering::Relaxed);
 		tokio::spawn(Self::api_processor(self.clone()));
 
 		Ok(())

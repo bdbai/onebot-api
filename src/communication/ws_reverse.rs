@@ -17,16 +17,17 @@ use tokio::select;
 use tokio::sync::broadcast;
 
 pub struct WsReverseService<T: ToSocketAddrs + Clone + Send + Sync> {
-	api_receiver: Option<APIReceiver>,
-	event_sender: Option<EventSender>,
+	api_receiver: Option<InternalAPIReceiver>,
+	event_sender: Option<InternalEventSender>,
 	close_signal_sender: broadcast::Sender<()>,
 	access_token: Option<String>,
 	addr: T,
+	is_running: Arc<AtomicBool>,
 }
 
 impl<T: ToSocketAddrs + Clone + Send + Sync> Drop for WsReverseService<T> {
 	fn drop(&mut self) {
-		let _ = self.close_signal_sender.send(());
+		self.uninstall();
 	}
 }
 
@@ -39,21 +40,22 @@ impl<T: ToSocketAddrs + Clone + Send + Sync> WsReverseService<T> {
 			close_signal_sender,
 			access_token,
 			addr,
+			is_running: Arc::new(AtomicBool::new(false)),
 		}
 	}
 }
 
 struct AppState {
 	access_token: Option<String>,
-	api_receiver: APIReceiver,
-	event_sender: EventSender,
+	api_receiver: InternalAPIReceiver,
+	event_sender: InternalEventSender,
 	close_signal_sender: broadcast::Sender<()>,
 	connected: Arc<AtomicBool>,
 }
 
 async fn send_processor(
 	mut send_side: SplitSink<WebSocket, Message>,
-	api_receiver: APIReceiver,
+	api_receiver: InternalAPIReceiver,
 	mut close_signal: broadcast::Receiver<()>,
 	mut connection_close_signal: broadcast::Receiver<()>,
 ) -> anyhow::Result<()> {
@@ -74,7 +76,7 @@ async fn send_processor(
 
 async fn read_processor(
 	mut read_side: SplitStream<WebSocket>,
-	event_sender: EventSender,
+	event_sender: InternalEventSender,
 	mut close_signal: broadcast::Receiver<()>,
 	connection_close_signal_sender: broadcast::Sender<()>,
 	connected: Arc<AtomicBool>,
@@ -86,12 +88,11 @@ async fn read_processor(
 				match msg {
 					Message::Text(data) => {
 						let str = data.as_str();
-						let event = serde_json::from_str::<Event>(str);
+						let event = serde_json::from_str::<DeserializedEvent>(str);
 						if event.is_err() {
 							continue
 						}
-						let event = Arc::new(event?);
-						let _ = event_sender.send(event);
+						let _ = event_sender.send_async(event?).await;
 					},
 					Message::Close(_) => {
 						let _ = connection_close_signal_sender.send(());
@@ -159,12 +160,27 @@ async fn handler(
 
 #[async_trait]
 impl<T: ToSocketAddrs + Clone + Send + Sync> CommunicationService for WsReverseService<T> {
-	fn inject(&mut self, api_receiver: APIReceiver, event_sender: EventSender) {
+	fn install(&mut self, api_receiver: InternalAPIReceiver, event_sender: InternalEventSender) {
 		self.api_receiver = Some(api_receiver);
 		self.event_sender = Some(event_sender);
 	}
 
-	async fn start_service(&self) -> ServiceStartResult<()> {
+	fn uninstall(&mut self) {
+		self.stop();
+		self.api_receiver = None;
+		self.event_sender = None;
+	}
+
+	fn stop(&self) {
+		let _ = self.close_signal_sender.send(());
+		self.is_running.store(false, Ordering::Relaxed);
+	}
+
+	async fn start(&self) -> ServiceStartResult<()> {
+		if self.is_running.load(Ordering::Relaxed) {
+			return Err(ServiceStartError::TaskIsRunning);
+		}
+
 		if self.api_receiver.is_none() && self.event_sender.is_none() {
 			return Err(ServiceStartError::NotInjected);
 		} else if self.event_sender.is_none() {
@@ -188,6 +204,7 @@ impl<T: ToSocketAddrs + Clone + Send + Sync> CommunicationService for WsReverseS
 		let router = Router::new().fallback(any(handler)).with_state(state);
 		let mut close_signal = self.close_signal_sender.subscribe();
 
+		self.is_running.store(true, Ordering::Relaxed);
 		tokio::spawn(
 			axum::serve(listener, router)
 				.with_graceful_shutdown(async move {

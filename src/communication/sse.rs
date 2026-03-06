@@ -6,6 +6,7 @@ use eventsource_stream::{EventStream, Eventsource};
 use futures::{Stream, StreamExt};
 use reqwest::IntoUrl;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::select;
 use tokio::sync::broadcast;
 use url::Url;
@@ -14,8 +15,9 @@ use url::Url;
 pub struct SseService {
 	url: Url,
 	access_token: Option<String>,
-	event_sender: Option<EventSender>,
+	event_sender: Option<InternalEventSender>,
 	close_signal_sender: broadcast::Sender<()>,
+	is_running: Arc<AtomicBool>,
 	// auto_reconnect: bool,
 	// reconnect_interval: Duration,
 	// reconnect_signal_sender: broadcast::Sender<()>
@@ -23,7 +25,7 @@ pub struct SseService {
 
 impl Drop for SseService {
 	fn drop(&mut self) {
-		let _ = self.close_signal_sender.send(());
+		self.uninstall();
 	}
 }
 
@@ -41,6 +43,7 @@ impl SseService {
 			access_token,
 			event_sender: None,
 			close_signal_sender,
+			is_running: Arc::new(AtomicBool::new(false)),
 			// auto_reconnect: auto_reconnect.unwrap_or(true),
 			// reconnect_interval: reconnect_interval.unwrap_or(Duration::from_secs(10)),
 			// reconnect_signal_sender
@@ -72,7 +75,7 @@ impl SseService {
 						if event.is_err() {
 							continue
 						}
-						let _ = event_sender.send(Arc::new(event?));
+						let _ = event_sender.send_async(event?).await;
 					}
 				}
 			}
@@ -96,15 +99,30 @@ impl SseService {
 
 #[async_trait]
 impl CommunicationService for SseService {
-	fn inject(&mut self, _api_receiver: APIReceiver, event_sender: EventSender) {
+	fn install(&mut self, _api_receiver: InternalAPIReceiver, event_sender: InternalEventSender) {
 		self.event_sender = Some(event_sender);
 	}
 
-	async fn start_service(&self) -> ServiceStartResult<()> {
+	fn uninstall(&mut self) {
+		self.stop();
+		self.event_sender = None;
+	}
+
+	fn stop(&self) {
+		let _ = self.close_signal_sender.send(());
+		self.is_running.store(false, Ordering::Relaxed);
+	}
+
+	async fn start(&self) -> ServiceStartResult<()> {
+		if self.is_running.load(Ordering::Relaxed) {
+			return Err(ServiceStartError::TaskIsRunning);
+		}
+
 		if self.event_sender.is_none() {
 			return Err(ServiceStartError::NotInjectedEventSender);
 		}
 
+		self.is_running.store(true, Ordering::Relaxed);
 		tokio::spawn(Self::eventsource_listener(self.clone()));
 
 		Ok(())

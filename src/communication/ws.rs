@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use reqwest::IntoUrl;
-use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::select;
@@ -68,18 +68,19 @@ impl WsServiceBuilder {
 pub struct WsService {
 	url: Url,
 	access_token: Option<String>,
-	api_receiver: Option<APIReceiver>,
-	event_sender: Option<EventSender>,
+	api_receiver: Option<InternalAPIReceiver>,
+	event_sender: Option<InternalEventSender>,
 	close_signal_sender: broadcast::Sender<()>,
 	connection_close_signal_sender: broadcast::Sender<()>,
 	auto_reconnect: bool,
 	reconnect_interval: Duration,
 	max_reconnect_times: u32,
+	is_running: Arc<AtomicBool>,
 }
 
 impl Drop for WsService {
 	fn drop(&mut self) {
-		let _ = self.close_signal_sender.send(());
+		self.uninstall();
 	}
 }
 
@@ -103,6 +104,7 @@ impl WsService {
 			auto_reconnect: auto_reconnect.unwrap_or(true),
 			reconnect_interval: reconnect_interval.unwrap_or(Duration::from_secs(10)),
 			max_reconnect_times: max_reconnect_times.unwrap_or(5),
+			is_running: Arc::new(AtomicBool::new(false)),
 		})
 	}
 
@@ -130,7 +132,7 @@ impl WsService {
 
 	pub async fn send_processor(
 		mut send_side: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
-		api_receiver: APIReceiver,
+		api_receiver: InternalAPIReceiver,
 		mut close_signal: broadcast::Receiver<()>,
 		mut connection_close_signal: broadcast::Receiver<()>,
 	) -> anyhow::Result<()> {
@@ -151,7 +153,7 @@ impl WsService {
 
 	pub async fn read_processor(
 		mut read_side: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-		event_sender: EventSender,
+		event_sender: InternalEventSender,
 		mut close_signal: broadcast::Receiver<()>,
 		connection_close_signal_sender: broadcast::Sender<()>,
 	) -> anyhow::Result<()> {
@@ -162,12 +164,11 @@ impl WsService {
 					match msg {
 						Message::Text(data) => {
 							let str = data.as_str();
-							let event = serde_json::from_str::<Event>(str);
+							let event = serde_json::from_str::<DeserializedEvent>(str);
 							if event.is_err() {
 								continue
 							}
-							let event = Arc::new(event?);
-							let _ = event_sender.send(event);
+							let _ = event_sender.send(event?);
 						},
 						Message::Close(_) => {
 							let _ = connection_close_signal_sender.send(());
@@ -235,13 +236,29 @@ impl WsService {
 
 #[async_trait]
 impl CommunicationService for WsService {
-	fn inject(&mut self, api_receiver: APIReceiver, event_sender: EventSender) {
+	fn install(&mut self, api_receiver: InternalAPIReceiver, event_sender: InternalEventSender) {
 		self.api_receiver = Some(api_receiver);
 		self.event_sender = Some(event_sender);
 	}
 
-	async fn start_service(&self) -> ServiceStartResult<()> {
+	fn uninstall(&mut self) {
+		self.stop();
+		self.api_receiver = None;
+		self.event_sender = None;
+	}
+
+	fn stop(&self) {
+		let _ = self.close_signal_sender.send(());
+		self.is_running.store(false, Ordering::Relaxed);
+	}
+
+	async fn start(&self) -> ServiceStartResult<()> {
+		if self.is_running.load(Ordering::Relaxed) {
+			return Err(ServiceStartError::TaskIsRunning);
+		}
+
 		self.spawn_processor().await?;
+		self.is_running.store(true, Ordering::Relaxed);
 		if self.auto_reconnect {
 			tokio::spawn(Self::reconnect_processor(self.clone()));
 		}

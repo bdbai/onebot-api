@@ -64,5 +64,5 @@ pub trait EventReceiver<T: EventTrait> {
 	// async fn wait_event(&self) -> anyhow::Result<EventStream>; TODO
 	// async fn listen(&mut self, listener: T) -> anyhow::Result<()>; TODO
 
-	fn get_receiver(&self) -> broadcast::Receiver<T>;
+	fn subscribe(&self) -> broadcast::Receiver<T>;
 }

@@ -32,6 +32,10 @@ pub enum ServiceStartError {
 	#[cfg(feature = "websocket")]
 	#[error("can not create websocket connection")]
 	WebSocketConnectError(#[from] tokio_tungstenite::tungstenite::Error),
+	#[error("task is running")]
+	TaskIsRunning,
+	#[error("task is not running")]
+	TaskIsNotRunning,
 }
 
 #[derive(Debug, TError)]

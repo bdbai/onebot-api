@@ -20,31 +20,33 @@ use tokio::sync::broadcast;
 /// let http_service = HttpService::new("https://example.com", Some("example_token".to_string())).unwrap();
 /// let sse_service = SseService::new("https://example.com/_events", Some("example_token".to_string())).unwrap();
 /// let combiner = SplitCombiner::new(http_service, sse_service);
-/// let client = Client::new(combiner, Duration::from_secs(5), None, None);
+/// let client = Client::new_with_options(combiner, Duration::from_secs(5), None, None);
 /// client.start_service().await.unwrap();
 /// ```
 pub struct SplitCombiner<S: CommunicationService, R: CommunicationService> {
 	send_side: S,
 	read_side: R,
-	event_process_sender: EventSender,
-	event_sender: Option<EventSender>,
+	event_process_sender: InternalEventSender,
+	event_process_receiver: InternalEventReceiver,
+	event_sender: Option<InternalEventSender>,
 	close_signal_sender: broadcast::Sender<()>,
 }
 
 impl<S: CommunicationService, R: CommunicationService> Drop for SplitCombiner<S, R> {
 	fn drop(&mut self) {
-		let _ = self.close_signal_sender.send(());
+		self.uninstall();
 	}
 }
 
 impl<S: CommunicationService, R: CommunicationService> SplitCombiner<S, R> {
 	pub fn new(send_side: S, read_side: R) -> Self {
-		let (event_process_sender, _) = broadcast::channel(16);
+		let (event_process_sender, event_process_receiver) = flume::bounded(16);
 		let (close_signal_sender, _) = broadcast::channel(1);
 		Self {
 			send_side,
 			read_side,
 			event_process_sender,
+			event_process_receiver,
 			event_sender: None,
 			close_signal_sender,
 		}
@@ -55,27 +57,40 @@ impl<S: CommunicationService, R: CommunicationService> SplitCombiner<S, R> {
 impl<S: CommunicationService, R: CommunicationService> CommunicationService
 	for SplitCombiner<S, R>
 {
-	fn inject(&mut self, api_receiver: APIReceiver, event_sender: EventSender) {
+	fn install(&mut self, api_receiver: InternalAPIReceiver, event_sender: InternalEventSender) {
 		let (_, empty_api_receiver) = flume::bounded(1);
 		self
 			.send_side
-			.inject(api_receiver, self.event_process_sender.clone());
+			.install(api_receiver, self.event_process_sender.clone());
 		self
 			.read_side
-			.inject(empty_api_receiver, event_sender.clone());
+			.install(empty_api_receiver, event_sender.clone());
 		self.event_sender = Some(event_sender);
 	}
 
-	async fn start_service(&self) -> ServiceStartResult<()> {
+	fn uninstall(&mut self) {
+		self.stop();
+		self.read_side.uninstall();
+		self.send_side.uninstall();
+		self.event_sender = None;
+	}
+
+	fn stop(&self) {
+		let _ = self.close_signal_sender.send(());
+		self.send_side.stop();
+		self.read_side.stop();
+	}
+
+	async fn start(&self) -> ServiceStartResult<()> {
 		async fn processor(
 			mut close_signal: broadcast::Receiver<()>,
-			mut event_process_receiver: EventReceiver,
-			event_sender: EventSender,
+			event_process_receiver: InternalEventReceiver,
+			event_sender: InternalEventSender,
 		) -> anyhow::Result<()> {
 			loop {
 				select! {
 					_ = close_signal.recv() => return Err(anyhow::anyhow!("close")),
-					Ok(data) = event_process_receiver.recv() => {
+					Ok(data) = event_process_receiver.recv_async() => {
 						if data.is_api_response() {
 							let _ = event_sender.send(data);
 						}
@@ -91,14 +106,16 @@ impl<S: CommunicationService, R: CommunicationService> CommunicationService
 
 		tokio::spawn(processor(
 			self.close_signal_sender.subscribe(),
-			self.event_process_sender.subscribe(),
+			self.event_process_receiver.clone(),
 			event_sender,
 		));
 
-		futures::try_join!(
-			self.send_side.start_service(),
-			self.read_side.start_service()
-		)?;
+		futures::try_join!(self.send_side.start(), self.read_side.start())?;
+		Ok(())
+	}
+
+	async fn restart(&self) -> ServiceStartResult<()> {
+		futures::try_join!(self.send_side.restart(), self.read_side.restart())?;
 		Ok(())
 	}
 }
@@ -129,17 +146,29 @@ impl<S: CommunicationService, R: CommunicationService> Drop for BothEventCombine
 impl<S: CommunicationService, R: CommunicationService> CommunicationService
 	for BothEventCombiner<S, R>
 {
-	fn inject(&mut self, api_receiver: APIReceiver, event_sender: EventSender) {
+	fn install(&mut self, api_receiver: InternalAPIReceiver, event_sender: InternalEventSender) {
 		let (_, empty_api_receiver) = flume::bounded(1);
-		self.send_side.inject(api_receiver, event_sender.clone());
-		self.read_side.inject(empty_api_receiver, event_sender);
+		self.send_side.install(api_receiver, event_sender.clone());
+		self.read_side.install(empty_api_receiver, event_sender);
 	}
 
-	async fn start_service(&self) -> ServiceStartResult<()> {
-		futures::try_join!(
-			self.send_side.start_service(),
-			self.read_side.start_service()
-		)?;
+	fn uninstall(&mut self) {
+		self.send_side.uninstall();
+		self.read_side.uninstall();
+	}
+
+	fn stop(&self) {
+		self.send_side.stop();
+		self.read_side.stop();
+	}
+
+	async fn start(&self) -> ServiceStartResult<()> {
+		futures::try_join!(self.send_side.start(), self.read_side.start())?;
+		Ok(())
+	}
+
+	async fn restart(&self) -> ServiceStartResult<()> {
+		futures::try_join!(self.send_side.restart(), self.read_side.restart())?;
 		Ok(())
 	}
 }

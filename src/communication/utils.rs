@@ -18,41 +18,69 @@ use serde_json::{Value as JsonValue, json};
 use std::sync::Arc;
 use std::time::Duration;
 use strum_macros::EnumIs;
+use tokio::select;
 use tokio::sync::broadcast;
 pub use tokio::sync::broadcast::Receiver as BroadcastReceiver;
 pub use tokio::sync::broadcast::Sender as BroadcastSender;
 
-pub type APISender = FlumeSender<APIRequest>;
-pub type APIReceiver = FlumeReceiver<APIRequest>;
+/// `Client` 与具体 `CommunicationService` 中  
+/// API请求的发送通道  
+/// 应由 `Client` 持有
+pub type InternalAPISender = FlumeSender<APIRequest>;
+/// `Client` 与具体 `CommunicationService` 中  
+/// API请求的接收通道  
+/// 应由 `CommunicationService` 持有
+pub type InternalAPIReceiver = FlumeReceiver<APIRequest>;
 
+/// `Client` 与具体 `CommunicationService` 中  
+/// 原始事件的发送通道  
+/// 应由 `CommunicationService` 持有
 pub type InternalEventSender = FlumeSender<DeserializedEvent>;
+/// `Client` 与具体 `CommunicationService` 中  
+/// 原始事件的接收通道  
+/// 应由 `Client` 持有
 pub type InternalEventReceiver = FlumeReceiver<DeserializedEvent>;
 
-pub type ServiceRuntimeResult<T> = Result<T, ServiceRuntimeError>;
+/// `Client` 与具体使用者之间  
+/// API响应的发送通道  
+/// 应由 `Client` 持有
+pub type PublicAPIResponseSender = BroadcastSender<ArcAPIResponse>;
+/// `Client` 与具体使用者之间  
+/// API响应的接收通道  
+/// 公开，任何人都可持有
+pub type PublicAPIResponseReceiver = BroadcastReceiver<ArcAPIResponse>;
 
-pub type EventSender = BroadcastSender<Arc<Event>>;
-pub type EventReceiver = BroadcastReceiver<Arc<Event>>;
+/// `Client` 与具体使用者之间  
+/// 事件（除去API响应）的发送通道  
+/// 应由 `Client` 持有
+pub type PublicEventSender = BroadcastSender<ArcNormalEvent>;
+/// `Client` 与具体使用者之间  
+/// 事件（除去API响应）的接收通道  
+/// 公开，任何人都可持有
+pub type PublicEventReceiver = BroadcastReceiver<ArcNormalEvent>;
+
+pub type ServiceRuntimeResult<T> = Result<T, ServiceRuntimeError>;
 
 pub type ArcServiceRuntimeError = Arc<ServiceRuntimeError>;
 pub type ArcAPIResponse = Arc<APIResponse>;
 pub type ArcNormalEvent = Arc<NormalEvent>;
-pub type ArcDeserializedEvent = Arc<DeserializedEvent>;
+
+pub const DEFAULT_CHANNEL_CAP: usize = 16;
+
+impl EventTrait for APIResponse {}
+impl EventTrait for ArcAPIResponse {}
+impl EventTrait for ArcNormalEvent {}
 
 #[derive(Deserialize, Clone, Debug, EnumIs)]
 #[serde(untagged)]
+/// 经由 `CommunicationService` 初步反序列化后的原始事件
 pub enum DeserializedEvent {
 	APIResponse(APIResponse),
 	Event(JsonValue),
 }
 
-#[derive(Deserialize, Clone, Debug, EnumIs)]
-#[serde(untagged)]
-pub enum Event {
-	APIResponse(APIResponse),
-	Event(NormalEvent),
-}
-
 #[derive(Serialize, Clone, Debug)]
+/// 由 `Client` 发出的API请求
 pub struct APIRequest {
 	pub action: String,
 	pub params: JsonValue,
@@ -60,6 +88,7 @@ pub struct APIRequest {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+/// 由 `CommunicationService` 返回的API响应
 pub struct APIResponse {
 	pub status: String,
 	pub retcode: i32,
@@ -72,44 +101,43 @@ impl APIResponse {
 		self.status == "ok"
 	}
 
-	pub fn parse_data<T: DeserializeOwned>(self) -> APIResult<T> {
+	pub fn parse_data<T: DeserializeOwned>(&self) -> APIResult<T> {
 		if !self.verify() {
 			return Err(APIRequestError::HttpError { code: self.retcode });
 		}
-		Ok(serde_json::from_value(self.data)?)
+		Ok(serde_json::from_value(self.data.clone())?)
 	}
 }
 
-impl EventTrait for Event {}
-impl EventTrait for Arc<Event> {}
-
 #[async_trait]
 pub trait APIResponseListener {
-	async fn listen(&mut self, echo: String, timeout: Option<Duration>) -> Option<Arc<Event>>;
-	async fn listen_without_timeout(&mut self, echo: String) -> Option<Arc<Event>>;
-	async fn listen_with_timeout(&mut self, echo: String, timeout: Duration) -> Option<Arc<Event>>;
+	async fn listen(&mut self, echo: String, timeout: Option<Duration>) -> Option<ArcAPIResponse>;
+	async fn listen_without_timeout(&mut self, echo: String) -> Option<ArcAPIResponse>;
+	async fn listen_with_timeout(
+		&mut self,
+		echo: String,
+		timeout: Duration,
+	) -> Option<ArcAPIResponse>;
 }
 
 #[async_trait]
-impl APIResponseListener for BroadcastReceiver<Arc<Event>> {
-	async fn listen(&mut self, echo: String, timeout: Option<Duration>) -> Option<Arc<Event>> {
+impl APIResponseListener for PublicAPIResponseReceiver {
+	async fn listen(&mut self, echo: String, timeout: Option<Duration>) -> Option<ArcAPIResponse> {
 		match timeout {
 			Some(timeout) => self.listen_with_timeout(echo, timeout).await,
 			None => self.listen_without_timeout(echo).await,
 		}
 	}
-	async fn listen_without_timeout(&mut self, echo: String) -> Option<Arc<Event>> {
+	async fn listen_without_timeout(&mut self, echo: String) -> Option<ArcAPIResponse> {
 		loop {
-			if let Ok(event) = self.recv().await // 获取Event
-				&& let Event::APIResponse(response) = &*event // 判断是否为APIResponse
-				&& response
+			if let Ok(api_response) = self.recv().await
+				&& api_response
 					.echo
 					.as_ref()
-					.map(|target_echo| target_echo == &echo) // 判断echo是否一致
+					.map(|target_echo| target_echo == &echo)
 					.unwrap_or(false)
-			// 若APIResponse不存在echo则默认false
 			{
-				return Some(Arc::clone(&event));
+				return Some(api_response);
 			}
 			if self.is_closed() {
 				return None;
@@ -117,7 +145,11 @@ impl APIResponseListener for BroadcastReceiver<Arc<Event>> {
 		}
 	}
 
-	async fn listen_with_timeout(&mut self, echo: String, timeout: Duration) -> Option<Arc<Event>> {
+	async fn listen_with_timeout(
+		&mut self,
+		echo: String,
+		timeout: Duration,
+	) -> Option<ArcAPIResponse> {
 		tokio::time::timeout(timeout, self.listen_without_timeout(echo))
 			.await
 			.ok()?
@@ -126,18 +158,54 @@ impl APIResponseListener for BroadcastReceiver<Arc<Event>> {
 
 #[async_trait]
 pub trait CommunicationService: Sync + Send {
-	fn inject(&mut self, api_receiver: APIReceiver, event_sender: EventSender);
-	async fn start_service(&self) -> ServiceStartResult<()>;
+	/// 安装服务  
+	/// 该方法仅进行服务的依赖注入，并不真正创建任务  
+	/// **应具备幂等性**
+	fn install(&mut self, api_receiver: InternalAPIReceiver, event_sender: InternalEventSender);
+
+	/// 卸载服务  
+	/// 服务应回收安装后产生的一切副作用和安装时注入的依赖  
+	/// **应具备幂等性**
+	fn uninstall(&mut self);
+
+	/// 停止服务  
+	/// 不同于 `uninstall` 方法 ，`stop` 方法仅需要回收安装后产生的副作用，并不需要回收安装时注入的依赖  
+	/// **应具备幂等性**
+	fn stop(&self);
+
+	/// 开始服务  
+	/// 服务内应保证任务在服务的生命周期内最多存在一个  
+	/// 由于在服务生命周期内最多存在一个任务，所以该方法 **应具备幂等性**
+	async fn start(&self) -> ServiceStartResult<()>;
+
+	/// 重启服务  
+	/// **不具备幂等性**
+	async fn restart(&self) -> ServiceStartResult<()> {
+		self.stop();
+		self.start().await
+	}
 }
 
 #[async_trait]
 impl CommunicationService for Box<dyn CommunicationService> {
-	fn inject(&mut self, api_receiver: APIReceiver, event_sender: EventSender) {
-		(**self).inject(api_receiver, event_sender);
+	fn install(&mut self, api_receiver: InternalAPIReceiver, event_sender: InternalEventSender) {
+		(**self).install(api_receiver, event_sender);
 	}
 
-	async fn start_service(&self) -> ServiceStartResult<()> {
-		(**self).start_service().await
+	fn uninstall(&mut self) {
+		(**self).uninstall();
+	}
+
+	fn stop(&self) {
+		(**self).stop();
+	}
+
+	async fn start(&self) -> ServiceStartResult<()> {
+		(**self).start().await
+	}
+
+	async fn restart(&self) -> ServiceStartResult<()> {
+		(**self).restart().await
 	}
 }
 
@@ -161,20 +229,140 @@ impl<T: CommunicationService + 'static> IntoService for T {
 /// use onebot_api::communication::ws::WsService;
 ///
 /// let ws_service = WsService::new("wss://example.com", Some("example_token".to_string())).unwrap();
-/// let client = Client::new(ws_service, Duration::from_secs(5), None, None);
+/// let client = Client::new_with_options(ws_service, Duration::from_secs(5), None, None);
 /// client.start_service().await.unwrap();
 /// ```
 pub struct Client {
 	service: Box<dyn CommunicationService>,
-	api_sender: APISender,
-	api_receiver: APIReceiver,
-	event_sender: EventSender,
+	internal_api_sender: InternalAPISender,
+	internal_api_receiver: InternalAPIReceiver,
+	internal_event_sender: InternalEventSender,
+	// internal_event_receiver: InternalEventReceiver,
+	public_api_response_sender: PublicAPIResponseSender,
+	public_event_sender: PublicEventSender,
 	timeout: Option<Duration>,
+	echo_generator: Box<dyn Fn() -> String + Send + Sync>,
+	close_signal_sender: broadcast::Sender<()>,
 }
 
-impl EventReceiverTrait<Arc<Event>> for Client {
-	fn get_receiver(&self) -> EventReceiver {
-		self.event_sender.subscribe()
+pub struct ClientBuilder {
+	service: Box<dyn CommunicationService>,
+	timeout: Option<Duration>,
+	public_api_response_channel_cap: Option<usize>,
+	public_event_channel_cap: Option<usize>,
+	internal_api_channel_cap: Option<usize>,
+	internal_event_channel_cap: Option<usize>,
+	echo_generator: Option<Box<dyn Fn() -> String + Send + Sync>>,
+}
+
+impl ClientBuilder {
+	pub fn new(service: impl IntoService) -> Self {
+		Self {
+			service: Box::new(service.into()),
+			timeout: None,
+			public_event_channel_cap: None,
+			public_api_response_channel_cap: None,
+			internal_event_channel_cap: None,
+			internal_api_channel_cap: None,
+			echo_generator: None,
+		}
+	}
+
+	pub fn build(self) -> Client {
+		Client::new_with_options(
+			self.service,
+			self.timeout,
+			self.public_api_response_channel_cap,
+			self.public_event_channel_cap,
+			self.internal_api_channel_cap,
+			self.internal_event_channel_cap,
+			self.echo_generator,
+		)
+	}
+
+	pub fn timeout(mut self, timeout: Duration) -> Self {
+		self.timeout = Some(timeout);
+		self
+	}
+
+	pub fn public_event_channel_cap(mut self, cap: usize) -> Self {
+		self.public_event_channel_cap = Some(cap);
+		self
+	}
+
+	pub fn public_api_response_channel_cap(mut self, cap: usize) -> Self {
+		self.public_api_response_channel_cap = Some(cap);
+		self
+	}
+
+	pub fn internal_event_channel_cap(mut self, cap: usize) -> Self {
+		self.internal_event_channel_cap = Some(cap);
+		self
+	}
+
+	pub fn internal_api_channel_cap(mut self, cap: usize) -> Self {
+		self.internal_api_channel_cap = Some(cap);
+		self
+	}
+
+	pub fn union_channel_cap(self, cap: usize) -> Self {
+		self
+			.public_event_channel_cap(cap)
+			.public_api_response_channel_cap(cap)
+			.internal_event_channel_cap(cap)
+			.internal_api_channel_cap(cap)
+	}
+
+	pub fn public_union_channel_cap(self, cap: usize) -> Self {
+		self
+			.public_event_channel_cap(cap)
+			.public_api_response_channel_cap(cap)
+	}
+
+	pub fn internal_union_channel_cap(self, cap: usize) -> Self {
+		self
+			.internal_event_channel_cap(cap)
+			.internal_api_channel_cap(cap)
+	}
+
+	pub fn echo_generator(mut self, generator: Box<dyn Fn() -> String + Send + Sync>) -> Self {
+		self.echo_generator = Some(generator);
+		self
+	}
+}
+
+impl Drop for Client {
+	fn drop(&mut self) {
+		self.service.uninstall();
+		let _ = self.close_signal_sender.send(());
+	}
+}
+
+impl Client {
+	pub fn subscribe_api_response(&self) -> PublicAPIResponseReceiver {
+		self.public_api_response_sender.subscribe()
+	}
+
+	pub fn subscribe_normal_event(&self) -> PublicEventReceiver {
+		self.public_event_sender.subscribe()
+	}
+}
+
+impl EventReceiverTrait<ArcNormalEvent> for Client {
+	fn subscribe(&self) -> PublicEventReceiver {
+		self.subscribe_normal_event()
+	}
+}
+
+impl EventReceiverTrait<ArcAPIResponse> for Client {
+	fn subscribe(&self) -> PublicAPIResponseReceiver {
+		self.subscribe_api_response()
+	}
+}
+
+impl<T: IntoService> From<T> for Client {
+	fn from(value: T) -> Self {
+		Self::new(value)
 	}
 }
 
@@ -184,38 +372,128 @@ impl Client {
 	/// # Params
 	/// - `service` 实现 [`IntoService`] 特征或 [`CommunicationService`] 特征的对象
 	/// - `timeout` API请求超时时间，若为 `None` 则一直等待
-	/// - `api_channel_cap` API请求消息通道的容量，默认为`16`
-	/// - `event_channel_cap` Event消息通道的容量，默认为`16`
-	pub fn new(
+	/// - `public_api_response_channel_cap` API响应通道容量，默认为`16`
+	/// - `public_event_channel_cap` Event事件通道容量，默认为`16`
+	/// - `internal_api_channel_cap` API请求通道容量，默认为`16`
+	/// - `internal_event_channel_cap` 原始事件通道容量，默认为`16`
+	pub fn new_with_options(
 		service: impl IntoService,
 		timeout: Option<Duration>,
-		api_channel_cap: Option<usize>,
-		event_channel_cap: Option<usize>,
+		public_api_response_channel_cap: Option<usize>,
+		public_event_channel_cap: Option<usize>,
+		internal_api_channel_cap: Option<usize>,
+		internal_event_channel_cap: Option<usize>,
+		echo_generator: Option<Box<dyn Fn() -> String + Send + Sync>>,
 	) -> Self {
+		let get_cap = |v: Option<usize>| v.unwrap_or(DEFAULT_CHANNEL_CAP);
+
 		let mut service = Box::new(service.into());
-		let (api_sender, api_receiver) = flume::bounded(api_channel_cap.unwrap_or(16));
-		let (event_sender, _) = broadcast::channel(event_channel_cap.unwrap_or(16));
-		service.inject(api_receiver.clone(), event_sender.clone());
+		let (internal_api_sender, internal_api_receiver) =
+			flume::bounded(get_cap(internal_api_channel_cap));
+		let (internal_event_sender, internal_event_receiver) =
+			flume::bounded(get_cap(internal_event_channel_cap));
+		let (public_api_response_sender, _) =
+			broadcast::channel(get_cap(public_api_response_channel_cap));
+		let (public_event_sender, _) = broadcast::channel(get_cap(public_event_channel_cap));
+		service.install(internal_api_receiver.clone(), internal_event_sender.clone());
+
+		let (close_signal_sender, _) = broadcast::channel(1);
+
+		tokio::spawn(Self::raw_event_processor(
+			close_signal_sender.subscribe(),
+			internal_event_receiver.clone(),
+			public_api_response_sender.clone(),
+			public_event_sender.clone(),
+		));
+
 		Self {
 			service,
-			api_receiver,
-			api_sender,
-			event_sender,
 			timeout,
+			internal_api_receiver,
+			internal_api_sender,
+			// internal_event_receiver,
+			internal_event_sender,
+			public_event_sender,
+			public_api_response_sender,
+			echo_generator: echo_generator.unwrap_or(Box::new(Self::generate_id)),
+			close_signal_sender,
 		}
+	}
+
+	pub fn new_with_union_channel_cap(
+		service: impl IntoService,
+		timeout: Option<Duration>,
+		channel_cap: Option<usize>,
+	) -> Self {
+		Self::new_with_options(
+			service,
+			timeout,
+			channel_cap,
+			channel_cap,
+			channel_cap,
+			channel_cap,
+			None,
+		)
+	}
+
+	pub fn new_with_timeout(service: impl IntoService, timeout: Option<Duration>) -> Self {
+		Self::new_with_union_channel_cap(service, timeout, None)
+	}
+
+	pub fn new(service: impl IntoService) -> Self {
+		Self::new_with_timeout(service, Some(Duration::from_secs(5)))
+	}
+
+	pub fn builder(service: impl IntoService) -> ClientBuilder {
+		ClientBuilder::new(service)
 	}
 }
 
 impl Client {
-	/// 启动服务
-	/// 在 `Client` 实例构造完成或调用 `change_service` 后都需要调用该方法启动服务
-	pub async fn start_service(&self) -> ServiceStartResult<()> {
-		self.service.start_service().await
+	async fn raw_event_processor(
+		mut close_signal: broadcast::Receiver<()>,
+		internal_event_receiver: InternalEventReceiver,
+		public_api_response_sender: PublicAPIResponseSender,
+		public_event_sender: PublicEventSender,
+	) -> anyhow::Result<()> {
+		loop {
+			select! {
+				_ = close_signal.recv() => return Err(anyhow::anyhow!("close")),
+				event = internal_event_receiver.recv_async() => {
+					match event {
+						Ok(DeserializedEvent::APIResponse(v)) => {
+							let _ = public_api_response_sender.send(Arc::new(v));
+						},
+						Ok(DeserializedEvent::Event(v)) => {
+							let v = serde_json::from_value(v);
+							if v.is_err() {
+								continue
+							}
+							let _ = public_event_sender.send(Arc::new(v?));
+						},
+						_ => ()
+					}
+				}
+			}
+		}
 	}
 
-	/// 更换服务
+	/// 启动服务  
+	/// 在 `Client` 实例构造完成或调用 `change_service` 后都需要调用该方法启动服务
+	pub async fn start_service(&self) -> ServiceStartResult<()> {
+		self.service.start().await
+	}
+
+	pub fn stop_service(&self) {
+		self.service.stop();
+	}
+
+	pub async fn restart_service(&self) -> ServiceStartResult<()> {
+		self.service.restart().await
+	}
+
+	/// 更换服务  
 	/// 即使在原服务启动后也可以更换服务
-	/// 但需保证原服务被drop，即调用原服务的析构函数
 	///
 	/// # Examples
 	/// ```rust
@@ -225,7 +503,7 @@ impl Client {
 	/// use onebot_api::communication::ws_reverse::WsReverseService;
 	///
 	/// let ws_service = WsService::new("wss://example.com", Some("example_token".to_string())).unwrap();
-	/// let mut client = Client::new(ws_service, Duration::from_secs(5), None, None);
+	/// let mut client = Client::new_with_options(ws_service, Duration::from_secs(5), None, None);
 	/// client.start_service().await.unwrap();
 	///
 	/// let ws_reverse_service = WsReverseService::new("0.0.0.0:8080", Some("example_token".to_string()));
@@ -234,7 +512,11 @@ impl Client {
 	/// ```
 	pub fn change_service(&mut self, service: impl IntoService) -> Box<dyn CommunicationService> {
 		let mut service = Box::new(service.into());
-		service.inject(self.api_receiver.clone(), self.event_sender.clone());
+		service.install(
+			self.internal_api_receiver.clone(),
+			self.internal_event_sender.clone(),
+		);
+		self.service.uninstall();
 		std::mem::replace(&mut self.service, service)
 	}
 
@@ -250,8 +532,12 @@ impl Client {
 }
 
 impl Client {
-	/// 随机生成uuid格式的id
-	/// 用于echo的生成
+	/// 随机生成uuid格式的id  
+	/// 用于echo的生成  
+	/// ---
+	/// 不要说用uuid有几率冲突  
+	/// 一个请求就那么点时间  
+	/// 这么点时间能产生一个uuid冲突建议你直接去买彩票
 	pub fn generate_id() -> String {
 		uuid::Uuid::new_v4().to_string()
 	}
@@ -261,16 +547,12 @@ impl Client {
 	/// # Returns
 	/// - `Some(api_response)` 成功获取API调用结果
 	/// - `None` 监听过程中事件通道被关闭或监听超时
-	pub async fn get_response(&self, echo: String) -> Option<APIResponse> {
-		let mut receiver = self.get_receiver();
-		if let Event::APIResponse(res) = &*(receiver.listen(echo, self.timeout).await?) {
-			Some(res.clone())
-		} else {
-			None
-		}
+	pub async fn get_response(&self, echo: String) -> Option<ArcAPIResponse> {
+		let mut receiver = self.subscribe_api_response();
+		receiver.listen(echo, self.timeout).await
 	}
 
-	pub fn parse_response<T: DeserializeOwned>(response: APIResponse) -> APIResult<T> {
+	pub fn parse_response<T: DeserializeOwned>(response: ArcAPIResponse) -> APIResult<T> {
 		response.parse_data()
 	}
 
@@ -281,7 +563,7 @@ impl Client {
 		echo: String,
 	) -> Result<(), SendError<APIRequest>> {
 		self
-			.api_sender
+			.internal_api_sender
 			.send_async(APIRequest {
 				action,
 				params,
@@ -304,7 +586,7 @@ impl Client {
 	/// use onebot_api::communication::utils::Client;
 	/// use onebot_api::communication::ws::WsService;
 	///
-	/// let client: Client = Client::new(WsService::new("ws://localhost:8080", None).unwrap(), Some(Duration::from_secs(5)), None, None);
+	/// let client: Client = Client::new_with_options(WsService::new("ws://localhost:8080", None).unwrap(), Some(Duration::from_secs(5)), None, None);
 	/// let response: Value =  client.send_and_parse("send_like", json!({})).await.unwrap();
 	/// ```
 	pub async fn send_and_parse<T: DeserializeOwned>(
@@ -312,7 +594,7 @@ impl Client {
 		action: impl ToString,
 		params: JsonValue,
 	) -> APIResult<T> {
-		let echo = Self::generate_id();
+		let echo = (self.echo_generator)();
 		self
 			.send_request(action.to_string(), params, echo.clone())
 			.await?;
@@ -324,6 +606,8 @@ impl Client {
 		Self::parse_response(response)
 	}
 }
+
+// APISender START
 
 #[async_trait]
 impl APISenderTrait for Client {
