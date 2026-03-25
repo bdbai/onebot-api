@@ -10,4 +10,5 @@ pub mod http_post;
 pub mod sse;
 #[cfg(feature = "websocket")]
 pub mod ws;
+#[cfg(feature = "websocket-reverse")]
 pub mod ws_reverse;
