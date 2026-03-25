@@ -1,3 +1,5 @@
+pub mod utils;
+
 #[cfg(feature = "combiner")]
 pub mod combiner;
 #[cfg(feature = "http")]
@@ -6,7 +8,6 @@ pub mod http;
 pub mod http_post;
 #[cfg(feature = "sse")]
 pub mod sse;
-pub mod utils;
 #[cfg(feature = "websocket")]
 pub mod ws;
 pub mod ws_reverse;

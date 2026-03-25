@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 use std::sync::Arc;
 use std::time::Duration;
-use strum_macros::EnumIs;
+use strum::EnumIs;
 use tokio::select;
 use tokio::sync::broadcast;
 pub use tokio::sync::broadcast::Receiver as BroadcastReceiver;
