@@ -1,6 +1,13 @@
+use crate::api::APISender;
+use crate::error::{APIRequestError, APIResult};
 use crate::message::receive_segment::ReceiveSegment;
+use crate::message::send_segment::SendSegment;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIs};
+
+#[cfg(feature = "quick_operation")]
+use crate::quick_operation::QuickSendMsg;
 
 #[derive(Deserialize, Debug, Copy, Clone, Display, EnumIs, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Sex {
@@ -18,6 +25,25 @@ pub struct PrivateMessageSender {
 	pub nickname: Option<String>,
 	pub sex: Option<Sex>,
 	pub age: Option<i32>,
+}
+
+#[cfg(feature = "quick_operation")]
+#[async_trait]
+impl<T: APISender + Send + Sync> QuickSendMsg<T> for PrivateMessageSender {
+	async fn send_msg(
+		&self,
+		api: &T,
+		msg: Vec<SendSegment>,
+		auto_escape: Option<bool>,
+	) -> APIResult<i32> {
+		api
+			.send_private_msg(
+				self.user_id.ok_or(APIRequestError::MissingParameters)?,
+				msg,
+				auto_escape,
+			)
+			.await
+	}
 }
 
 #[derive(Deserialize, Debug, Copy, Clone, Display, EnumIs, Ord, PartialOrd, Eq, PartialEq)]
@@ -48,6 +74,25 @@ pub struct GroupMessageSender {
 	pub level: Option<String>,
 	pub role: Option<GroupMessageSenderRole>,
 	pub title: Option<String>,
+}
+
+#[cfg(feature = "quick_operation")]
+#[async_trait]
+impl<T: APISender + Send + Sync> QuickSendMsg<T> for GroupMessageSender {
+	async fn send_msg(
+		&self,
+		api: &T,
+		msg: Vec<SendSegment>,
+		auto_escape: Option<bool>,
+	) -> APIResult<i32> {
+		api
+			.send_private_msg(
+				self.user_id.ok_or(APIRequestError::MissingParameters)?,
+				msg,
+				auto_escape,
+			)
+			.await
+	}
 }
 
 #[derive(Deserialize, Debug, Copy, Clone, Display, EnumIs, Ord, PartialOrd, Eq, PartialEq)]
@@ -81,6 +126,19 @@ pub struct MessageEventPrivate {
 	pub sender: PrivateMessageSender,
 }
 
+#[cfg(feature = "quick_operation")]
+#[async_trait]
+impl<T: APISender + Send + Sync> QuickSendMsg<T> for MessageEventPrivate {
+	async fn send_msg(
+		&self,
+		api: &T,
+		msg: Vec<SendSegment>,
+		auto_escape: Option<bool>,
+	) -> APIResult<i32> {
+		api.send_private_msg(self.user_id, msg, auto_escape).await
+	}
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct MessageEventGroup {
 	pub sub_type: GroupMessageSubType,
@@ -94,6 +152,19 @@ pub struct MessageEventGroup {
 	pub sender: GroupMessageSender,
 }
 
+#[cfg(feature = "quick_operation")]
+#[async_trait]
+impl<T: APISender + Send + Sync> QuickSendMsg<T> for MessageEventGroup {
+	async fn send_msg(
+		&self,
+		api: &T,
+		msg: Vec<SendSegment>,
+		auto_escape: Option<bool>,
+	) -> APIResult<i32> {
+		api.send_group_msg(self.group_id, msg, auto_escape).await
+	}
+}
+
 #[derive(Deserialize, Debug, Clone, Display, EnumIs)]
 #[serde(tag = "message_type")]
 pub enum MessageEvent {
@@ -102,6 +173,23 @@ pub enum MessageEvent {
 
 	#[serde(rename = "group")]
 	Group(MessageEventGroup),
+}
+
+#[cfg(feature = "quick_operation")]
+#[async_trait]
+impl<T: APISender + Send + Sync> QuickSendMsg<T> for MessageEvent {
+	async fn send_msg(
+		&self,
+		api: &T,
+		msg: Vec<SendSegment>,
+		auto_escape: Option<bool>,
+	) -> APIResult<i32> {
+		match self {
+			Self::Group(data) => data.send_msg(api, msg, auto_escape),
+			Self::Private(data) => data.send_msg(api, msg, auto_escape),
+		}
+		.await
+	}
 }
 
 impl MessageEvent {

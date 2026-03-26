@@ -7,14 +7,16 @@ pub type ServiceStartResult<T> = Result<T, ServiceStartError>;
 
 #[derive(Debug, TError)]
 pub enum APIRequestError {
-	#[error("There is no result returned in time")]
+	#[error("there is no result returned in time")]
 	Timeout,
-	#[error("The request failed with code: {:?}", code)]
+	#[error("the request failed with code: {:?}", code)]
 	HttpError { code: i32 },
-	#[error("Deserialize failed")]
+	#[error("deserialize failed")]
 	DeserializeError(#[from] serde_json::Error),
-	#[error("Send request failed")]
+	#[error("send request failed")]
 	SendError(#[from] flume::SendError<APIRequest>),
+	#[error("missing parameters")]
+	MissingParameters,
 }
 
 #[derive(Debug, TError)]

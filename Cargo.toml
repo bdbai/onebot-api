@@ -39,17 +39,20 @@ http = []
 http-post = ["axum", "hmac", "sha1", "hex"]
 sse = ["reqwest/stream", "eventsource-stream"]
 combiner = []
+quick_operation = []
 
 rustls = ["reqwest/rustls", "tokio-tungstenite/rustls-tls-webpki-roots"]
+native-tls = ["reqwest/native-tls", "tokio-tungstenite/native-tls"]
 
 full = [
-    "websocket",
-    "websocket-reverse",
-    "http",
-    "http-post",
-    "sse",
-    "combiner",
-    "rustls",
+	"websocket",
+	"websocket-reverse",
+	"http",
+	"http-post",
+	"sse",
+	"combiner",
+	"rustls",
+	"quick_operation"
 ]
 
 default = ["full"]
