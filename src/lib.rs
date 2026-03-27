@@ -8,4 +8,5 @@ pub mod message;
 
 #[cfg(feature = "quick_operation")]
 pub mod quick_operation;
+#[cfg(feature = "selector")]
 pub mod selector;

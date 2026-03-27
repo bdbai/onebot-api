@@ -1,6 +1,8 @@
 use crate::event::{meta::MetaEvent, notice::NoticeEvent, request::RequestEvent};
-// use flume::Receiver;
+
+#[cfg(feature = "selector")]
 use crate::selector::Selector;
+
 use async_trait::async_trait;
 use message::MessageEvent;
 use serde::Deserialize;
@@ -21,11 +23,13 @@ pub struct EventMessage {
 }
 
 impl EventMessage {
+	#[cfg(feature = "selector")]
 	pub fn selector(&'_ self) -> Selector<'_, Self> {
 		Selector { data: Some(self) }
 	}
 }
 
+#[cfg(feature = "selector")]
 impl<'a> Selector<'a, EventMessage> {
 	pub fn message_event_selector(&self) -> Selector<'a, MessageEvent> {
 		Selector {
@@ -150,11 +154,13 @@ pub struct EventNotice {
 }
 
 impl EventNotice {
+	#[cfg(feature = "selector")]
 	pub fn selector(&'_ self) -> Selector<'_, Self> {
 		Selector { data: Some(self) }
 	}
 }
 
+#[cfg(feature = "selector")]
 impl<'a> Selector<'a, EventNotice> {
 	pub fn notice_event_selector(&self) -> Selector<'a, NoticeEvent> {
 		Selector {
@@ -279,11 +285,13 @@ pub struct EventRequest {
 }
 
 impl EventRequest {
+	#[cfg(feature = "selector")]
 	pub fn selector(&'_ self) -> Selector<'_, Self> {
 		Selector { data: Some(self) }
 	}
 }
 
+#[cfg(feature = "selector")]
 impl<'a> Selector<'a, EventRequest> {
 	pub fn request_event_selector(&self) -> Selector<'a, RequestEvent> {
 		Selector {
@@ -408,11 +416,13 @@ pub struct EventMetaEvent {
 }
 
 impl EventMetaEvent {
+	#[cfg(feature = "selector")]
 	pub fn selector(&'_ self) -> Selector<'_, Self> {
 		Selector { data: Some(self) }
 	}
 }
 
+#[cfg(feature = "selector")]
 impl<'a> Selector<'a, EventMetaEvent> {
 	pub fn meta_event_selector(&self) -> Selector<'a, MetaEvent> {
 		Selector {
@@ -545,6 +555,7 @@ pub enum Event {
 }
 
 impl Event {
+	#[cfg(feature = "selector")]
 	pub fn selector(&'_ self) -> Selector<'_, Event> {
 		Selector { data: Some(self) }
 	}
@@ -658,6 +669,7 @@ impl Event {
 	}
 }
 
+#[cfg(feature = "selector")]
 impl<'a> Selector<'a, Event> {
 	pub fn message(&self) -> Selector<'a, EventMessage> {
 		Selector {

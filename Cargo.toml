@@ -38,8 +38,10 @@ websocket-reverse = ["axum"]
 http = []
 http-post = ["axum", "hmac", "sha1", "hex"]
 sse = ["reqwest/stream", "eventsource-stream"]
+
 combiner = []
 quick_operation = []
+selector = []
 
 rustls = ["reqwest/rustls", "tokio-tungstenite/rustls-tls-webpki-roots"]
 native-tls = ["reqwest/native-tls", "tokio-tungstenite/native-tls"]
@@ -52,7 +54,8 @@ full = [
 	"sse",
 	"combiner",
 	"rustls",
-	"quick_operation"
+	"quick_operation",
+	"selector"
 ]
 
 default = ["full"]
