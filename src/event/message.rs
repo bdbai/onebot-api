@@ -193,6 +193,14 @@ impl<T: APISender + Send + Sync> QuickSendMsg<T> for MessageEvent {
 }
 
 impl MessageEvent {
+	pub fn match_private(&self) -> Option<&MessageEventPrivate> {
+		if let Self::Private(data) = self {
+			Some(data)
+		} else {
+			None
+		}
+	}
+
 	pub fn on_private<T>(&self, handler: impl FnOnce(&MessageEventPrivate) -> T) -> Option<T> {
 		if let Self::Private(data) = self {
 			Some(handler(data))
@@ -207,6 +215,14 @@ impl MessageEvent {
 	) -> Option<T> {
 		if let Self::Private(data) = self {
 			Some(handler(data).await)
+		} else {
+			None
+		}
+	}
+
+	pub fn match_group(&self) -> Option<&MessageEventGroup> {
+		if let Self::Group(data) = self {
+			Some(data)
 		} else {
 			None
 		}

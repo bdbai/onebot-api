@@ -26,6 +26,121 @@ impl EventMessage {
 	}
 }
 
+impl<'a> Selector<'a, EventMessage> {
+	pub fn message_event_selector(&self) -> Selector<'a, MessageEvent> {
+		Selector {
+			data: self.data.map(|d| &*d.data),
+		}
+	}
+
+	pub fn filter(&mut self, f: impl FnOnce(&'a EventMessage) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter(mut self, f: impl FnOnce(&'a EventMessage) -> bool) -> Self {
+		self.filter(f);
+		self
+	}
+
+	pub async fn filter_async(&mut self, f: impl AsyncFnOnce(&'a EventMessage) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_async(mut self, f: impl AsyncFnOnce(&'a EventMessage) -> bool) -> Self {
+		self.filter_async(f).await;
+		self
+	}
+
+	pub fn filter_time(&mut self, f: impl FnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.time)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter_time(mut self, f: impl FnOnce(i64) -> bool) -> Self {
+		self.filter_time(f);
+		self
+	}
+
+	pub async fn filter_time_async(&mut self, f: impl AsyncFnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.time).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_time_async(mut self, f: impl AsyncFnOnce(i64) -> bool) -> Self {
+		self.filter_time_async(f).await;
+		self
+	}
+
+	pub fn filter_self_id(&mut self, f: impl FnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.self_id)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter_self_id(mut self, f: impl FnOnce(i64) -> bool) -> Self {
+		self.filter_self_id(f);
+		self
+	}
+
+	pub async fn filter_self_id_async(&mut self, f: impl AsyncFnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.self_id).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_self_id_async(mut self, f: impl AsyncFnOnce(i64) -> bool) -> Self {
+		self.filter_self_id_async(f).await;
+		self
+	}
+
+	pub fn filter_message_event(&mut self, f: impl FnOnce(&MessageEvent) -> bool) {
+		if let Some(data) = self.data
+			&& !f(&data.data)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter_message_event(mut self, f: impl FnOnce(&MessageEvent) -> bool) -> Self {
+		self.filter_message_event(f);
+		self
+	}
+
+	pub async fn filter_message_event_async(&mut self, f: impl AsyncFnOnce(&MessageEvent) -> bool) {
+		if let Some(data) = self.data
+			&& !f(&data.data).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_message_event_async(
+		mut self,
+		f: impl AsyncFnOnce(&MessageEvent) -> bool,
+	) -> Self {
+		self.filter_message_event_async(f).await;
+		self
+	}
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct EventNotice {
 	pub time: i64,
@@ -37,6 +152,121 @@ pub struct EventNotice {
 impl EventNotice {
 	pub fn selector(&'_ self) -> Selector<'_, Self> {
 		Selector { data: Some(self) }
+	}
+}
+
+impl<'a> Selector<'a, EventNotice> {
+	pub fn notice_event_selector(&self) -> Selector<'a, NoticeEvent> {
+		Selector {
+			data: self.data.map(|d| &d.data),
+		}
+	}
+
+	pub fn filter(&mut self, f: impl FnOnce(&'a EventNotice) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter(mut self, f: impl FnOnce(&'a EventNotice) -> bool) -> Self {
+		self.filter(f);
+		self
+	}
+
+	pub async fn filter_async(&mut self, f: impl AsyncFnOnce(&'a EventNotice) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_async(mut self, f: impl AsyncFnOnce(&'a EventNotice) -> bool) -> Self {
+		self.filter_async(f).await;
+		self
+	}
+
+	pub fn filter_time(&mut self, f: impl FnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.time)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter_time(mut self, f: impl FnOnce(i64) -> bool) -> Self {
+		self.filter_time(f);
+		self
+	}
+
+	pub async fn filter_time_async(&mut self, f: impl AsyncFnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.time).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_time_async(mut self, f: impl AsyncFnOnce(i64) -> bool) -> Self {
+		self.filter_time_async(f).await;
+		self
+	}
+
+	pub fn filter_self_id(&mut self, f: impl FnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.self_id)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter_self_id(mut self, f: impl FnOnce(i64) -> bool) -> Self {
+		self.filter_self_id(f);
+		self
+	}
+
+	pub async fn filter_self_id_async(&mut self, f: impl AsyncFnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.self_id).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_self_id_async(mut self, f: impl AsyncFnOnce(i64) -> bool) -> Self {
+		self.filter_self_id_async(f).await;
+		self
+	}
+
+	pub fn filter_notice_event(&mut self, f: impl FnOnce(&NoticeEvent) -> bool) {
+		if let Some(data) = self.data
+			&& !f(&data.data)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter_notice_event(mut self, f: impl FnOnce(&NoticeEvent) -> bool) -> Self {
+		self.filter_notice_event(f);
+		self
+	}
+
+	pub async fn filter_notice_event_async(&mut self, f: impl AsyncFnOnce(&NoticeEvent) -> bool) {
+		if let Some(data) = self.data
+			&& !f(&data.data).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_notice_event_async(
+		mut self,
+		f: impl AsyncFnOnce(&NoticeEvent) -> bool,
+	) -> Self {
+		self.filter_notice_event_async(f).await;
+		self
 	}
 }
 
@@ -54,6 +284,121 @@ impl EventRequest {
 	}
 }
 
+impl<'a> Selector<'a, EventRequest> {
+	pub fn request_event_selector(&self) -> Selector<'a, RequestEvent> {
+		Selector {
+			data: self.data.map(|d| &d.data),
+		}
+	}
+
+	pub fn filter(&mut self, f: impl FnOnce(&'a EventRequest) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter(mut self, f: impl FnOnce(&'a EventRequest) -> bool) -> Self {
+		self.filter(f);
+		self
+	}
+
+	pub async fn filter_async(&mut self, f: impl AsyncFnOnce(&'a EventRequest) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_async(mut self, f: impl AsyncFnOnce(&'a EventRequest) -> bool) -> Self {
+		self.filter_async(f).await;
+		self
+	}
+
+	pub fn filter_time(&mut self, f: impl FnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.time)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter_time(mut self, f: impl FnOnce(i64) -> bool) -> Self {
+		self.filter_time(f);
+		self
+	}
+
+	pub async fn filter_time_async(&mut self, f: impl AsyncFnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.time).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_time_async(mut self, f: impl AsyncFnOnce(i64) -> bool) -> Self {
+		self.filter_time_async(f).await;
+		self
+	}
+
+	pub fn filter_self_id(&mut self, f: impl FnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.self_id)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter_self_id(mut self, f: impl FnOnce(i64) -> bool) -> Self {
+		self.filter_self_id(f);
+		self
+	}
+
+	pub async fn filter_self_id_async(&mut self, f: impl AsyncFnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.self_id).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_self_id_async(mut self, f: impl AsyncFnOnce(i64) -> bool) -> Self {
+		self.filter_self_id_async(f).await;
+		self
+	}
+
+	pub fn filter_request_event(&mut self, f: impl FnOnce(&RequestEvent) -> bool) {
+		if let Some(data) = self.data
+			&& !f(&data.data)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter_request_event(mut self, f: impl FnOnce(&RequestEvent) -> bool) -> Self {
+		self.filter_request_event(f);
+		self
+	}
+
+	pub async fn filter_request_event_async(&mut self, f: impl AsyncFnOnce(&RequestEvent) -> bool) {
+		if let Some(data) = self.data
+			&& !f(&data.data).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_request_event_async(
+		mut self,
+		f: impl AsyncFnOnce(&RequestEvent) -> bool,
+	) -> Self {
+		self.filter_request_event_async(f).await;
+		self
+	}
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct EventMetaEvent {
 	pub time: i64,
@@ -65,6 +410,121 @@ pub struct EventMetaEvent {
 impl EventMetaEvent {
 	pub fn selector(&'_ self) -> Selector<'_, Self> {
 		Selector { data: Some(self) }
+	}
+}
+
+impl<'a> Selector<'a, EventMetaEvent> {
+	pub fn meta_event_selector(&self) -> Selector<'a, MetaEvent> {
+		Selector {
+			data: self.data.map(|d| &d.data),
+		}
+	}
+
+	pub fn filter(&mut self, f: impl FnOnce(&'a EventMetaEvent) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter(mut self, f: impl FnOnce(&'a EventMetaEvent) -> bool) -> Self {
+		self.filter(f);
+		self
+	}
+
+	pub async fn filter_async(&mut self, f: impl AsyncFnOnce(&'a EventMetaEvent) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_async(mut self, f: impl AsyncFnOnce(&'a EventMetaEvent) -> bool) -> Self {
+		self.filter_async(f).await;
+		self
+	}
+
+	pub fn filter_time(&mut self, f: impl FnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.time)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter_time(mut self, f: impl FnOnce(i64) -> bool) -> Self {
+		self.filter_time(f);
+		self
+	}
+
+	pub async fn filter_time_async(&mut self, f: impl AsyncFnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.time).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_time_async(mut self, f: impl AsyncFnOnce(i64) -> bool) -> Self {
+		self.filter_time_async(f).await;
+		self
+	}
+
+	pub fn filter_self_id(&mut self, f: impl FnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.self_id)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter_self_id(mut self, f: impl FnOnce(i64) -> bool) -> Self {
+		self.filter_self_id(f);
+		self
+	}
+
+	pub async fn filter_self_id_async(&mut self, f: impl AsyncFnOnce(i64) -> bool) {
+		if let Some(data) = self.data
+			&& !f(data.self_id).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_self_id_async(mut self, f: impl AsyncFnOnce(i64) -> bool) -> Self {
+		self.filter_self_id_async(f).await;
+		self
+	}
+
+	pub fn filter_meta_event(&mut self, f: impl FnOnce(&MetaEvent) -> bool) {
+		if let Some(data) = self.data
+			&& !f(&data.data)
+		{
+			self.data = None
+		}
+	}
+
+	pub fn and_filter_meta_event(mut self, f: impl FnOnce(&MetaEvent) -> bool) -> Self {
+		self.filter_meta_event(f);
+		self
+	}
+
+	pub async fn filter_meta_event_async(&mut self, f: impl AsyncFnOnce(&MetaEvent) -> bool) {
+		if let Some(data) = self.data
+			&& !f(&data.data).await
+		{
+			self.data = None
+		}
+	}
+
+	pub async fn and_filter_meta_event_async(
+		mut self,
+		f: impl AsyncFnOnce(&MetaEvent) -> bool,
+	) -> Self {
+		self.filter_meta_event_async(f).await;
+		self
 	}
 }
 
@@ -194,6 +654,32 @@ impl Event {
 			Some(handler(data).await)
 		} else {
 			None
+		}
+	}
+}
+
+impl<'a> Selector<'a, Event> {
+	pub fn message(&self) -> Selector<'a, EventMessage> {
+		Selector {
+			data: self.data.and_then(|d| d.match_message()),
+		}
+	}
+
+	pub fn notice(&self) -> Selector<'a, EventNotice> {
+		Selector {
+			data: self.data.and_then(|d| d.match_notice()),
+		}
+	}
+
+	pub fn request(&self) -> Selector<'a, EventRequest> {
+		Selector {
+			data: self.data.and_then(|d| d.match_request()),
+		}
+	}
+
+	pub fn meta_event(&self) -> Selector<'a, EventMetaEvent> {
+		Selector {
+			data: self.data.and_then(|d| d.match_meta_event()),
 		}
 	}
 }
