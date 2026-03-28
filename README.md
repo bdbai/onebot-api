@@ -370,6 +370,72 @@ async fn main() {
 在 `text` 宏的内部使用了 `format` 宏  
 因此，你可以像使用 `println` 宏一样使用 `text` 宏
 
+## quick_operation
+有时候，我们收到了一个事件，我们想直接对这个事件进行操作  
+此时，若调用 `client` 上的对应api，效率未免太低了，还要一个个传参  
+于是，我们提供了 quick_operation  
+quick_operation 是一系列快速操作trait（虽然目前还没实现多少，但未来肯定会实现的！）  
+用户可以直接在事件上进行对应的操作  
+
+## `Selector`
+
+实际上，因为事件分发使用了Arc的原因，同时为了追求事件零拷贝分发  
+这就使得事件的处理变得十分困难（至少实现起来非常繁琐）  
+于是，我们提供了 `Selector` 工具  
+`Selector` 提供了类似迭代器的链式调用能力
+```rust
+use onebot_api::communication::utils::Client;
+use onebot_api::communication::ws::WsService;
+use onebot_api::quick_operation::QuickSendMsg;
+use onebot_api::text;
+
+#[tokio::main]
+async fn main() {
+	let ws_service = WsService::new("wss://example.com", Some("example_token".to_string())).unwrap();
+	let client = Client::new(ws_service);
+	client.start_service().await.unwrap();
+	let mut r = client.subscribe_normal_event();
+	while let Ok(event) = r.recv().await {
+		event
+			.selector()
+			.message()
+			.and_filter_self_id(|self_id| self_id == 123456)
+			.message_event_selector()
+			.group()
+			.and_filter_user_id(|user_id| user_id == 114514)
+			.and_filter_raw_message(|msg| msg.starts_with("/command"))
+			.and_normal()
+			.select_async(async |event| {
+				event
+					.send_msg(&client, text!("this is a command"), None)
+					.await
+			})
+			.await
+			.expect("not matched")
+			.expect("can not send message");
+	}
+}
+```
+在这里，我们接收到了一个事件，此时，我们要求该事件：
+
+1. 属于 `message` 类型
+2. 要求机器人id为 123456
+3. 要求该 `message` 为群组消息
+4. 要求发送用户id为 114514
+5. 要求原始消息内容前缀为 `/command`
+6. 要求为正常消息
+
+在以上条件全部满足后，将会执行 `select_async` 中传入的闭包  
+其中，若任何一个条件不满足，则会直接返回 `None` ，不执行闭包  
+对于以上所有 `filter` 函数，我们都提供了以下几个版本：
+
+- 普通版本
+- 链式调用版本（前缀 `and`）
+- 异步版本（后缀 `async`）
+- 链式调用异步版本（前缀 `and` + 后缀 `async`）
+
+当然，最后的 `select_async` 也有对应的异步版本
+
 # Todo List
 
 - `WsService` 自动重连 ✅
