@@ -371,10 +371,10 @@ impl<'a> Selector<'a, NoticeEventGroupAdmin> {
 
 #[derive(Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct NoticeEventGroupDecrease {
-	sub_type: GroupDecreaseType,
-	group_id: i64,
-	operator_id: i64,
-	user_id: i64,
+	pub sub_type: GroupDecreaseType,
+	pub group_id: i64,
+	pub operator_id: i64,
+	pub user_id: i64,
 }
 
 impl NoticeEventGroupDecrease {
@@ -577,10 +577,10 @@ impl<'a> Selector<'a, NoticeEventGroupDecrease> {
 
 #[derive(Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct NoticeEventGroupIncrease {
-	sub_type: GroupIncreaseType,
-	group_id: i64,
-	operator_id: i64,
-	user_id: i64,
+	pub sub_type: GroupIncreaseType,
+	pub group_id: i64,
+	pub operator_id: i64,
+	pub user_id: i64,
 }
 
 impl NoticeEventGroupIncrease {
