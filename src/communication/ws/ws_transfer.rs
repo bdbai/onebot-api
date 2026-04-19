@@ -51,12 +51,17 @@ impl<'a, 'b, S: AsyncRead + AsyncWrite + Unpin> WsTransfer<'a, 'b, S> {
 				};
 				ws.as_mut().start_send(Message::Text(msg.into()))?;
 				self.upload_state = UploadState::Flushing;
+				Poll::Ready(Ok(()))
 			}
+			// api_receiver 对面已经关了，但是 event_sender 还不一定。
+			// 这时我们不应该立刻关闭连接，而是继续等待 event_sender 也断开。
 			None => {
-				self.initiate_close();
+				if self.event_sender.is_disconnected() {
+					self.initiate_close();
+				}
+				Poll::Pending
 			}
 		}
-		Poll::Ready(Ok(()))
 	}
 
 	fn poll_progress(&mut self, cx: &mut Context<'_>) -> Poll<WebSocketResult<ControlFlow<()>>> {
@@ -81,7 +86,12 @@ impl<'a, 'b, S: AsyncRead + AsyncWrite + Unpin> WsTransfer<'a, 'b, S> {
 						return Poll::Ready(Ok(ControlFlow::Break(())));
 					}
 				}
-				UploadState::ClosedByLocal => {}
+				UploadState::ClosedByLocal => match ready!(ws.poll_next(cx)) {
+					None | Some(Ok(Message::Close(_))) | Some(Err(_)) => {
+						return Poll::Ready(Ok(ControlFlow::Break(())));
+					}
+					Some(Ok(_)) => continue,
+				},
 				UploadState::ClosedByPeer => {
 					ready!(ws.as_mut().poll_close(cx)?);
 					return Poll::Ready(Ok(ControlFlow::Continue(())));
@@ -89,19 +99,11 @@ impl<'a, 'b, S: AsyncRead + AsyncWrite + Unpin> WsTransfer<'a, 'b, S> {
 			}
 
 			match ready!(Pin::new(&mut self.ws).poll_next(cx)) {
-				None | Some(Ok(Message::Close(_))) | Some(Err(_))
-					if self.upload_state == UploadState::ClosedByLocal =>
-				{
-					return Poll::Ready(Ok(ControlFlow::Break(())));
-				}
-				Some(Ok(_)) if self.upload_state == UploadState::ClosedByLocal => {}
 				Some(Ok(Message::Text(msg))) => {
 					let Ok(event) = serde_json::from_str::<DeserializedEvent>(msg.as_str()) else {
 						continue;
 					};
-					if self.event_sender.send(event).is_err() {
-						self.initiate_close();
-					}
+					self.event_sender.send(event).ok();
 				}
 				None | Some(Ok(Message::Close(_))) => self.upload_state = UploadState::ClosedByPeer,
 				Some(Err(e)) => return Poll::Ready(Err(e)),
