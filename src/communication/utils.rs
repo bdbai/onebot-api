@@ -10,12 +10,12 @@ use crate::message::receive_segment::ReceiveSegment;
 use crate::message::send_segment::SendSegment;
 use async_trait::async_trait;
 pub use flume::Receiver as FlumeReceiver;
-use flume::SendError;
 pub use flume::Sender as FlumeSender;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
-use std::sync::Arc;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use strum::EnumIs;
 use tokio::select;
@@ -40,15 +40,15 @@ pub type InternalEventSender = FlumeSender<DeserializedEvent>;
 /// 原始事件的接收通道  
 /// 应由 `Client` 持有
 pub type InternalEventReceiver = FlumeReceiver<DeserializedEvent>;
+/// `Client` 与具体 `RawEventProcessor` 中  
+/// API响应的发送通道  
+/// 应由 `Client` 持有
+type InternalAPIResponseSender = tokio::sync::oneshot::Sender<Arc<APIResponse>>;
 
 /// `Client` 与具体使用者之间  
 /// API响应的发送通道  
 /// 应由 `Client` 持有
 pub type PublicAPIResponseSender = BroadcastSender<ArcAPIResponse>;
-/// `Client` 与具体使用者之间  
-/// API响应的接收通道  
-/// 公开，任何人都可持有
-pub type PublicAPIResponseReceiver = BroadcastReceiver<ArcAPIResponse>;
 
 /// `Client` 与具体使用者之间  
 /// 事件（除去API响应）的发送通道  
@@ -63,6 +63,7 @@ pub type ServiceRuntimeResult<T> = Result<T, ServiceRuntimeError>;
 
 pub type ArcServiceRuntimeError = Arc<ServiceRuntimeError>;
 pub type ArcAPIResponse = Arc<APIResponse>;
+type ArcAPIRequestRegistry = Arc<Mutex<BTreeMap<String, InternalAPIResponseSender>>>;
 pub type ArcNormalEvent = Arc<NormalEvent>;
 
 pub const DEFAULT_CHANNEL_CAP: usize = 16;
@@ -106,53 +107,6 @@ impl APIResponse {
 			return Err(APIRequestError::HttpError { code: self.retcode });
 		}
 		Ok(serde_json::from_value(self.data.clone())?)
-	}
-}
-
-#[async_trait]
-pub trait APIResponseListener {
-	async fn listen(&mut self, echo: String, timeout: Option<Duration>) -> Option<ArcAPIResponse>;
-	async fn listen_without_timeout(&mut self, echo: String) -> Option<ArcAPIResponse>;
-	async fn listen_with_timeout(
-		&mut self,
-		echo: String,
-		timeout: Duration,
-	) -> Option<ArcAPIResponse>;
-}
-
-#[async_trait]
-impl APIResponseListener for PublicAPIResponseReceiver {
-	async fn listen(&mut self, echo: String, timeout: Option<Duration>) -> Option<ArcAPIResponse> {
-		match timeout {
-			Some(timeout) => self.listen_with_timeout(echo, timeout).await,
-			None => self.listen_without_timeout(echo).await,
-		}
-	}
-	async fn listen_without_timeout(&mut self, echo: String) -> Option<ArcAPIResponse> {
-		loop {
-			if let Ok(api_response) = self.recv().await
-				&& api_response
-					.echo
-					.as_ref()
-					.map(|target_echo| target_echo == &echo)
-					.unwrap_or(false)
-			{
-				return Some(api_response);
-			}
-			if self.is_closed() {
-				return None;
-			}
-		}
-	}
-
-	async fn listen_with_timeout(
-		&mut self,
-		echo: String,
-		timeout: Duration,
-	) -> Option<ArcAPIResponse> {
-		tokio::time::timeout(timeout, self.listen_without_timeout(echo))
-			.await
-			.ok()?
 	}
 }
 
@@ -238,7 +192,7 @@ pub struct Client {
 	internal_api_receiver: InternalAPIReceiver,
 	internal_event_sender: InternalEventSender,
 	// internal_event_receiver: InternalEventReceiver,
-	public_api_response_sender: PublicAPIResponseSender,
+	api_request_registry: ArcAPIRequestRegistry,
 	public_event_sender: PublicEventSender,
 	timeout: Option<Duration>,
 	echo_generator: Box<dyn Fn() -> String + Send + Sync>,
@@ -248,7 +202,6 @@ pub struct Client {
 pub struct ClientBuilder {
 	service: Box<dyn CommunicationService>,
 	timeout: Option<Duration>,
-	public_api_response_channel_cap: Option<usize>,
 	public_event_channel_cap: Option<usize>,
 	internal_api_channel_cap: Option<usize>,
 	internal_event_channel_cap: Option<usize>,
@@ -261,9 +214,8 @@ impl ClientBuilder {
 			service: Box::new(service.into()),
 			timeout: None,
 			public_event_channel_cap: None,
-			public_api_response_channel_cap: None,
-			internal_event_channel_cap: None,
 			internal_api_channel_cap: None,
+			internal_event_channel_cap: None,
 			echo_generator: None,
 		}
 	}
@@ -272,7 +224,6 @@ impl ClientBuilder {
 		Client::new_with_options(
 			self.service,
 			self.timeout,
-			self.public_api_response_channel_cap,
 			self.public_event_channel_cap,
 			self.internal_api_channel_cap,
 			self.internal_event_channel_cap,
@@ -290,11 +241,6 @@ impl ClientBuilder {
 		self
 	}
 
-	pub fn public_api_response_channel_cap(mut self, cap: usize) -> Self {
-		self.public_api_response_channel_cap = Some(cap);
-		self
-	}
-
 	pub fn internal_event_channel_cap(mut self, cap: usize) -> Self {
 		self.internal_event_channel_cap = Some(cap);
 		self
@@ -308,15 +254,12 @@ impl ClientBuilder {
 	pub fn union_channel_cap(self, cap: usize) -> Self {
 		self
 			.public_event_channel_cap(cap)
-			.public_api_response_channel_cap(cap)
 			.internal_event_channel_cap(cap)
 			.internal_api_channel_cap(cap)
 	}
 
 	pub fn public_union_channel_cap(self, cap: usize) -> Self {
-		self
-			.public_event_channel_cap(cap)
-			.public_api_response_channel_cap(cap)
+		self.public_event_channel_cap(cap)
 	}
 
 	pub fn internal_union_channel_cap(self, cap: usize) -> Self {
@@ -339,10 +282,6 @@ impl Drop for Client {
 }
 
 impl Client {
-	pub fn subscribe_api_response(&self) -> PublicAPIResponseReceiver {
-		self.public_api_response_sender.subscribe()
-	}
-
 	pub fn subscribe_normal_event(&self) -> PublicEventReceiver {
 		self.public_event_sender.subscribe()
 	}
@@ -351,12 +290,6 @@ impl Client {
 impl EventReceiverTrait<ArcNormalEvent> for Client {
 	fn subscribe(&self) -> PublicEventReceiver {
 		self.subscribe_normal_event()
-	}
-}
-
-impl EventReceiverTrait<ArcAPIResponse> for Client {
-	fn subscribe(&self) -> PublicAPIResponseReceiver {
-		self.subscribe_api_response()
 	}
 }
 
@@ -379,7 +312,6 @@ impl Client {
 	pub fn new_with_options(
 		service: impl IntoService,
 		timeout: Option<Duration>,
-		public_api_response_channel_cap: Option<usize>,
 		public_event_channel_cap: Option<usize>,
 		internal_api_channel_cap: Option<usize>,
 		internal_event_channel_cap: Option<usize>,
@@ -392,17 +324,16 @@ impl Client {
 			flume::bounded(get_cap(internal_api_channel_cap));
 		let (internal_event_sender, internal_event_receiver) =
 			flume::bounded(get_cap(internal_event_channel_cap));
-		let (public_api_response_sender, _) =
-			broadcast::channel(get_cap(public_api_response_channel_cap));
 		let (public_event_sender, _) = broadcast::channel(get_cap(public_event_channel_cap));
 		service.install(internal_api_receiver.clone(), internal_event_sender.clone());
 
 		let (close_signal_sender, _) = broadcast::channel(1);
+		let api_request_registry = ArcAPIRequestRegistry::default();
 
 		tokio::spawn(Self::raw_event_processor(
 			close_signal_sender.subscribe(),
 			internal_event_receiver.clone(),
-			public_api_response_sender.clone(),
+			api_request_registry.clone(),
 			public_event_sender.clone(),
 		));
 
@@ -414,9 +345,9 @@ impl Client {
 			// internal_event_receiver,
 			internal_event_sender,
 			public_event_sender,
-			public_api_response_sender,
 			echo_generator: echo_generator.unwrap_or(Box::new(Self::generate_id)),
 			close_signal_sender,
+			api_request_registry,
 		}
 	}
 
@@ -428,7 +359,6 @@ impl Client {
 		Self::new_with_options(
 			service,
 			timeout,
-			channel_cap,
 			channel_cap,
 			channel_cap,
 			channel_cap,
@@ -453,7 +383,7 @@ impl Client {
 	async fn raw_event_processor(
 		mut close_signal: broadcast::Receiver<()>,
 		internal_event_receiver: InternalEventReceiver,
-		public_api_response_sender: PublicAPIResponseSender,
+		api_request_registry: ArcAPIRequestRegistry,
 		public_event_sender: PublicEventSender,
 	) -> anyhow::Result<()> {
 		loop {
@@ -462,7 +392,13 @@ impl Client {
 				event = internal_event_receiver.recv_async() => {
 					match event {
 						Ok(DeserializedEvent::APIResponse(v)) => {
-							let _ = public_api_response_sender.send(Arc::new(v));
+							let Some(response_channel) = v.echo.as_ref().and_then(|echo| {
+								let mut registry = api_request_registry.lock().unwrap();
+								registry.remove(echo)
+							}) else {
+								continue
+							};
+							response_channel.send(Arc::new(v)).ok();
 						},
 						Ok(DeserializedEvent::Event(v)) => {
 							let v = serde_json::from_value(v);
@@ -471,7 +407,7 @@ impl Client {
 							}
 							let _ = public_event_sender.send(Arc::new(v?));
 						},
-						_ => ()
+						Err(_) => return Err(anyhow::anyhow!("internal event channel closed")),
 					}
 				}
 			}
@@ -542,16 +478,6 @@ impl Client {
 		uuid::Uuid::new_v4().to_string()
 	}
 
-	/// 自动获取 `receiver` 并监听带有指定 `echo` 的API调用结果
-	///
-	/// # Returns
-	/// - `Some(api_response)` 成功获取API调用结果
-	/// - `None` 监听过程中事件通道被关闭或监听超时
-	pub async fn get_response(&self, echo: String) -> Option<ArcAPIResponse> {
-		let mut receiver = self.subscribe_api_response();
-		receiver.listen(echo, self.timeout).await
-	}
-
 	pub fn parse_response<T: DeserializeOwned>(response: ArcAPIResponse) -> APIResult<T> {
 		response.parse_data()
 	}
@@ -561,7 +487,29 @@ impl Client {
 		action: String,
 		params: JsonValue,
 		echo: String,
-	) -> Result<(), SendError<APIRequest>> {
+	) -> APIResult<ArcAPIResponse> {
+		let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+		{
+			let echo = echo.clone();
+			let mut registry = self.api_request_registry.lock().unwrap();
+			registry.insert(echo, response_tx);
+		}
+
+		struct RequestGuard<'a> {
+			echo: String,
+			registry: &'a ArcAPIRequestRegistry,
+		}
+		impl<'a> Drop for RequestGuard<'a> {
+			fn drop(&mut self) {
+				let mut registry = self.registry.lock().unwrap();
+				registry.remove(&self.echo);
+			}
+		}
+		let _request_guard = RequestGuard {
+			echo: echo.clone(),
+			registry: &self.api_request_registry,
+		};
+
 		self
 			.internal_api_sender
 			.send_async(APIRequest {
@@ -569,7 +517,17 @@ impl Client {
 				params,
 				echo: Some(echo),
 			})
-			.await
+			.await?;
+		let response_future = async { response_rx.await.ok() };
+		if let Some(timeout) = self.timeout {
+			tokio::time::timeout(timeout, response_future)
+				.await
+				.ok()
+				.flatten()
+		} else {
+			response_future.await
+		}
+		.ok_or(APIRequestError::Timeout)
 	}
 
 	/// 生成echo并发送API请求  
@@ -595,14 +553,9 @@ impl Client {
 		params: JsonValue,
 	) -> APIResult<T> {
 		let echo = (self.echo_generator)();
-		self
+		let response = self
 			.send_request(action.to_string(), params, echo.clone())
 			.await?;
-		let response = self.get_response(echo).await;
-		if response.is_none() {
-			return Err(APIRequestError::Timeout);
-		}
-		let response = response.unwrap();
 		Self::parse_response(response)
 	}
 }
