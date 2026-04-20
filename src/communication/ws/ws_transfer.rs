@@ -67,7 +67,7 @@ impl<'a, 'b, S: AsyncRead + AsyncWrite + Unpin> WsTransfer<'a, 'b, S> {
 	fn poll_progress(&mut self, cx: &mut Context<'_>) -> Poll<WebSocketResult<ControlFlow<()>>> {
 		loop {
 			let mut ws = Pin::new(&mut self.ws);
-			match self.upload_state {
+			match dbg!(self.upload_state) {
 				UploadState::AwaitingEvent => {
 					if self.poll_upload_one_event(cx)?.is_ready() {
 						continue;
@@ -98,7 +98,7 @@ impl<'a, 'b, S: AsyncRead + AsyncWrite + Unpin> WsTransfer<'a, 'b, S> {
 				}
 			}
 
-			match ready!(Pin::new(&mut self.ws).poll_next(cx)) {
+			match dbg!(ready!(Pin::new(&mut self.ws).poll_next(cx))) {
 				Some(Ok(Message::Text(msg))) => {
 					let Ok(event) = serde_json::from_str::<DeserializedEvent>(msg.as_str()) else {
 						continue;
