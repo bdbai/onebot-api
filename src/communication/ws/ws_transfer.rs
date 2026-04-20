@@ -2,6 +2,7 @@ use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 
+use flume::r#async::RecvStream;
 use futures::future::FusedFuture;
 use futures::stream::FusedStream;
 use futures::{Sink, Stream};
@@ -9,11 +10,13 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::{Message, Result as WebSocketResult};
 
-use crate::communication::utils::{DeserializedEvent, InternalAPIReceiver, InternalEventSender};
+use crate::communication::utils::{
+	APIRequest, DeserializedEvent, InternalAPIReceiver, InternalEventSender,
+};
 
 pub(super) struct WsTransfer<'a, 'b, S> {
 	ws: WebSocketStream<S>,
-	api_receiver: &'a InternalAPIReceiver,
+	api_stream: RecvStream<'a, APIRequest>,
 	event_sender: &'b InternalEventSender,
 	upload_state: UploadState,
 }
@@ -35,7 +38,7 @@ impl<'a, 'b, S: AsyncRead + AsyncWrite + Unpin> WsTransfer<'a, 'b, S> {
 	) -> Self {
 		Self {
 			ws,
-			api_receiver,
+			api_stream: api_receiver.stream(),
 			event_sender,
 			upload_state: UploadState::AwaitingEvent,
 		}
@@ -44,7 +47,7 @@ impl<'a, 'b, S: AsyncRead + AsyncWrite + Unpin> WsTransfer<'a, 'b, S> {
 	fn poll_upload_one_event(&mut self, cx: &mut Context<'_>) -> Poll<WebSocketResult<()>> {
 		let mut ws = Pin::new(&mut self.ws);
 		ready!(dbg!(ws.as_mut().poll_ready(cx)?));
-		match ready!(dbg!(Pin::new(&mut self.api_receiver.stream()).poll_next(cx))) {
+		match ready!(dbg!(Pin::new(&mut self.api_stream).poll_next(cx))) {
 			Some(event) => {
 				let Ok(msg) = serde_json::to_string(&event) else {
 					return Poll::Ready(Ok(()));
