@@ -43,8 +43,8 @@ impl<'a, 'b, S: AsyncRead + AsyncWrite + Unpin> WsTransfer<'a, 'b, S> {
 
 	fn poll_upload_one_event(&mut self, cx: &mut Context<'_>) -> Poll<WebSocketResult<()>> {
 		let mut ws = Pin::new(&mut self.ws);
-		ready!(ws.as_mut().poll_ready(cx)?);
-		match ready!(Pin::new(&mut self.api_receiver.stream()).poll_next(cx)) {
+		ready!(dbg!(ws.as_mut().poll_ready(cx)?));
+		match ready!(dbg!(Pin::new(&mut self.api_receiver.stream()).poll_next(cx))) {
 			Some(event) => {
 				let Ok(msg) = serde_json::to_string(&event) else {
 					return Poll::Ready(Ok(()));
@@ -98,7 +98,7 @@ impl<'a, 'b, S: AsyncRead + AsyncWrite + Unpin> WsTransfer<'a, 'b, S> {
 				}
 			}
 
-			match dbg!(ready!(Pin::new(&mut self.ws).poll_next(cx))) {
+			match ready!(dbg!(Pin::new(&mut self.ws).poll_next(cx))) {
 				Some(Ok(Message::Text(msg))) => {
 					let Ok(event) = serde_json::from_str::<DeserializedEvent>(msg.as_str()) else {
 						continue;
