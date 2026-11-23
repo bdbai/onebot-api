@@ -2,7 +2,7 @@ use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 
-use flume::r#async::RecvStream;
+use flume::r#async::{RecvStream, SendFut};
 use futures::{Sink, Stream};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::WebSocketStream;
@@ -16,6 +16,7 @@ pub(super) struct WsTransfer<'a, 'b, S> {
 	ws: WebSocketStream<S>,
 	api_stream: RecvStream<'a, APIRequest>,
 	event_sender: &'b InternalEventSender,
+	event_send_task: Option<SendFut<'b, DeserializedEvent>>,
 	upload_state: UploadState,
 }
 
@@ -38,6 +39,7 @@ impl<'a, 'b, S: AsyncRead + AsyncWrite + Unpin> WsTransfer<'a, 'b, S> {
 			ws,
 			api_stream: api_receiver.stream(),
 			event_sender,
+			event_send_task: None,
 			upload_state: UploadState::AwaitingEvent,
 		}
 	}
@@ -66,8 +68,28 @@ impl<'a, 'b, S: AsyncRead + AsyncWrite + Unpin> WsTransfer<'a, 'b, S> {
 		}
 	}
 
+	/// 推进挂起的事件下发，返回 `true` 表示通道仍满、事件尚未送出。  
+	/// 这里不能改回阻塞的 `event_sender.send()`：单线程 runtime 下通道满时
+	/// 会把 worker 线程卡死，其他任务（包括事件消费者）都无法推进。
+	fn poll_event_send(&mut self, cx: &mut Context<'_>) -> bool {
+		let Some(task) = self.event_send_task.as_mut() else {
+			return false;
+		};
+		match Pin::new(task).poll(cx) {
+			// 事件消费者已消失时为 Err，事件直接丢弃
+			Poll::Ready(_result) => {
+				self.event_send_task = None;
+				false
+			}
+			Poll::Pending => true,
+		}
+	}
+
 	fn poll_progress(&mut self, cx: &mut Context<'_>) -> Poll<WebSocketResult<ControlFlow<()>>> {
 		loop {
+			// 事件下发不阻塞其余 IO，通道满时只暂停读取新帧
+			let event_pending = self.poll_event_send(cx);
+
 			let ws = Pin::new(&mut self.ws);
 			match self.upload_state {
 				UploadState::AwaitingEvent => {
@@ -87,17 +109,28 @@ impl<'a, 'b, S: AsyncRead + AsyncWrite + Unpin> WsTransfer<'a, 'b, S> {
 					if close_result.is_err() {
 						return Poll::Ready(Ok(ControlFlow::Break(())));
 					}
+					continue;
 				}
-				UploadState::ClosedByLocal => match ready!(ws.poll_next(cx)) {
-					None | Some(Ok(Message::Close(_))) | Some(Err(_)) => {
-						return Poll::Ready(Ok(ControlFlow::Break(())));
+				UploadState::ClosedByLocal => {
+					match ready!(ws.poll_next(cx)) {
+						// 对端已收尾，在途事件直接丢弃
+						None | Some(Ok(Message::Close(_))) | Some(Err(_)) => {
+							return Poll::Ready(Ok(ControlFlow::Break(())));
+						}
+						Some(Ok(_)) => {}
 					}
-					Some(Ok(_)) => continue,
-				},
+					continue;
+				}
 				UploadState::ClosedByPeer => {
 					ready!(ws.poll_close(cx)?);
 					return Poll::Ready(Ok(ControlFlow::Continue(())));
 				}
+			}
+
+			// 事件通道满时暂停读取新帧：保证事件顺序，且最多只多缓存一条事件。
+			// 此处 poll_event_send 已注册 waker，可以安全返回 Pending。
+			if event_pending {
+				return Poll::Pending;
 			}
 
 			let ws = Pin::new(&mut self.ws);
@@ -106,7 +139,7 @@ impl<'a, 'b, S: AsyncRead + AsyncWrite + Unpin> WsTransfer<'a, 'b, S> {
 					let Ok(event) = serde_json::from_str::<DeserializedEvent>(msg.as_str()) else {
 						continue;
 					};
-					self.event_sender.send(event).ok();
+					self.event_send_task = Some(self.event_sender.send_async(event));
 				}
 				None | Some(Ok(Message::Close(_))) => self.upload_state = UploadState::ClosedByPeer,
 				Some(Err(e)) => return Poll::Ready(Err(e)),
